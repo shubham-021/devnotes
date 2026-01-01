@@ -1,0 +1,657 @@
+---
+title: Go Type System
+description: Understanding types, interfaces, and the dual nature of values in Go
+---
+
+## Types Are First-Class Concepts
+
+In Go, types are not merely memory layouts. They are first-class concepts that define identity, behavior, and meaning. You do not use a struct directly as you would in C. Instead, you always define a named type.
+
+```go
+type Point struct {
+    X int
+    Y int
+}
+```
+
+The `struct` keyword describes the internal structure, but `Point` is the type. There is no standalone `struct Point` declaration like in C. The type declaration creates a new, distinct type that can have methods, satisfy interfaces, and participate in the type system.
+
+Consider the difference:
+
+```go
+type Celsius float64
+type Fahrenheit float64
+
+func (c Celsius) String() string {
+    return fmt.Sprintf("%.2f°C", c)
+}
+
+var temp1 Celsius = 100
+var temp2 Fahrenheit = 212
+
+// temp1 and temp2 are different types, despite both being float64 underneath
+// temp1 = temp2  // compile error: cannot use Fahrenheit as Celsius
+```
+
+The underlying representation is identical, but Go treats them as distinct types. This prevents accidental mixing of incompatible units.
+
+---
+
+## Structs Are Types, Not Just Data Containers
+
+In C, a struct is a memory layout. In Go, a struct-based type is a full participant in the type system. It can have methods, satisfy interfaces, serve as a signal, and carry semantic meaning.
+
+```go
+type HTTPClient struct {
+    Timeout    time.Duration
+    MaxRetries int
+}
+
+func (c *HTTPClient) Get(url string) (*Response, error) {
+    // implementation
+}
+
+func (c *HTTPClient) Post(url string, body io.Reader) (*Response, error) {
+    // implementation
+}
+```
+
+The `HTTPClient` type is not just a container for `Timeout` and `MaxRetries`. It is a type that can perform HTTP operations through its methods.
+
+An empty struct is still a valid, meaningful type:
+
+```go
+type Done struct{}
+```
+
+This type carries no data. Its entire purpose is to exist as a distinct type. This is useful for signaling, event markers, and set implementations where meaning comes from the type itself, not from any stored value.
+
+---
+
+## Values Are Created with Composite Literals
+
+When you write:
+
+```go
+Done{}
+```
+
+You are creating a value of type `Done`. The curly braces do not mean "empty" or "nothing." They mean "instantiate this type with these field values." For a struct with no fields, there are no values to provide, but you are still performing an instantiation.
+
+```go
+type Point struct {
+    X int
+    Y int
+}
+
+p1 := Point{}           // zero value: X=0, Y=0
+p2 := Point{X: 10}      // X=10, Y=0
+p3 := Point{10, 20}     // X=10, Y=20 (positional initialization)
+```
+
+Each of these creates a concrete value of type `Point`. The composite literal syntax is how you bring a type into existence as a value.
+
+---
+
+## Interfaces Hold Two Things
+
+An interface value is not a simple container. At runtime, it holds two pieces of information:
+
+1. The concrete type of the stored value
+2. The concrete value itself
+
+```go
+var x interface{} = 42
+```
+
+At runtime, `x` contains:
+
+- Type information: `int`
+- Value: `42`
+
+This dual nature is fundamental to understanding how Go handles polymorphism. When you pass a value to an interface, Go stores both the value and its type.
+
+```go
+type Stringer interface {
+    String() string
+}
+
+type Person struct {
+    Name string
+}
+
+func (p Person) String() string {
+    return p.Name
+}
+
+var s Stringer = Person{Name: "Alice"}
+// s contains:
+// - type: Person
+// - value: Person{Name: "Alice"}
+```
+
+The interface variable `s` knows both what it holds and what type that thing is.
+
+---
+
+## The Empty Interface Means Any Type, Not No Type
+
+```go
+var x interface{}
+```
+
+This declaration does not mean `x` has no type or erases type information. It means `x` can hold a value of any type. When you assign a value:
+
+```go
+x = 3.14
+```
+
+The variable `x` now contains both the type `float64` and the value `3.14`. The concrete type is always preserved inside the interface. The empty interface delays knowing the type until runtime, but it never loses the type information.
+
+```go
+func printType(v interface{}) {
+    fmt.Printf("Type: %T, Value: %v\n", v, v)
+}
+
+printType(42)        // Type: int, Value: 42
+printType("hello")   // Type: string, Value: hello
+printType(true)      // Type: bool, Value: true
+```
+
+The `%T` format specifier retrieves the concrete type stored in the interface.
+
+---
+
+## Type Assertion Extracts the Value, Not the Type
+
+A type assertion has the form `x.(T)`:
+
+```go
+var x interface{} = 42
+v := x.(int)
+```
+
+This does not return the type. It returns the value with a static type of `int`. The assertion means: "If the concrete type inside `x` is `int`, extract the value and give it the static type `int`."
+
+The value itself does not change. Only its static type in the source code changes from `interface{}` to `int`.
+
+```go
+var x interface{} = "hello"
+
+s := x.(string)    // s has static type string, value "hello"
+fmt.Println(s)     // prints: hello
+
+n := x.(int)       // panic: interface holds string, not int
+```
+
+If the assertion fails, the program panics. Use the comma-ok form for safe assertions:
+
+```go
+s, ok := x.(string)
+if ok {
+    fmt.Println("String value:", s)
+} else {
+    fmt.Println("Not a string")
+}
+```
+
+---
+
+## The Special Syntax .(type) Only Works in Type Switches
+
+The syntax `x.(type)` is not a general expression. It is special syntax that only the compiler recognizes inside a type switch statement. You cannot use it elsewhere.
+
+```go
+// This does not compile:
+t := x.(type)  // syntax error
+
+// This is the only valid use:
+switch v := x.(type) {
+case int:
+    fmt.Println("int:", v)
+case string:
+    fmt.Println("string:", v)
+}
+```
+
+The `.(type)` syntax is a compiler directive that enables the type switch mechanism. It has no meaning outside that context.
+
+---
+
+## Type Switches Inspect the Concrete Type
+
+A type switch examines the concrete type stored inside an interface and executes the matching case:
+
+```go
+func process(x interface{}) {
+    switch v := x.(type) {
+    case int:
+        fmt.Println("Integer:", v*2)
+    case string:
+        fmt.Println("String length:", len(v))
+    case bool:
+        fmt.Println("Boolean:", !v)
+    default:
+        fmt.Println("Unknown type")
+    }
+}
+```
+
+The mechanics of this switch are:
+
+1. The runtime inspects the concrete type stored in `x`
+2. The switch selects the matching case based on that type
+3. A new variable `v` is created with the concrete value
+4. Inside each case, `v` has the static type of that case
+
+In the `case int` branch, `v` is of type `int`. In the `case string` branch, `v` is of type `string`. The value itself remains unchanged; only the static type available to the compiler changes.
+
+---
+
+## Type Switches Answer "What Kind?" Not "What Value?"
+
+A regular switch answers: "What value does this variable hold?"
+
+```go
+switch x {
+case 1:
+    fmt.Println("one")
+case 2:
+    fmt.Println("two")
+}
+```
+
+A type switch answers: "What kind of thing is this?"
+
+```go
+switch x.(type) {
+case int:
+    fmt.Println("an integer")
+case string:
+    fmt.Println("a string")
+}
+```
+
+Knowing the type must come first because operations depend on type. You cannot call string methods on an integer. You cannot perform arithmetic on a boolean. The compiler needs static type information to generate correct code. Value-based logic comes after type resolution.
+
+---
+
+## Variable Shadowing in Type Switches
+
+Consider this function:
+
+```go
+func handle(x interface{}) {
+    switch x := x.(type) {
+    case int:
+        fmt.Println(x * 2)
+    case string:
+        fmt.Println(len(x))
+    }
+}
+```
+
+There are two different variables named `x`:
+
+- The outer `x` is the function parameter with type `interface{}`
+- The inner `x` is declared by the type switch and has a different type in each case
+
+Inside the `case int` branch, `x` refers to the inner variable of type `int`. The outer `x` still exists but is shadowed by the inner declaration. This behavior follows standard Go scoping rules. There is no ambiguity because scope determines which variable is referenced.
+
+```go
+func demonstrate(x interface{}) {
+    fmt.Printf("Outer x type: %T\n", x)
+    
+    switch inner := x.(type) {
+    case int:
+        fmt.Printf("Inner type: %T, value: %d\n", inner, inner)
+        // x still refers to the interface{} parameter here
+        // inner refers to the int value
+    }
+}
+
+demonstrate(42)
+// Output:
+// Outer x type: int
+// Inner type: int, value: 42
+```
+
+Using a different variable name like `inner` makes the distinction explicit.
+
+---
+
+## Type Switches Preserve the Value, Not Store the Type
+
+A common misconception is that `x := x.(type)` stores the type in `x`. This is incorrect.
+
+The type switch preserves the value and gives it a static type. Inside each case branch, the variable holds the same value that was in the interface, but with the concrete type known to the compiler.
+
+```go
+type Counter struct {
+    count int
+}
+
+func (c Counter) Increment() Counter {
+    c.count++
+    return c
+}
+
+func process(x interface{}) {
+    switch v := x.(type) {
+    case Counter:
+        // v is the same Counter value, with static type Counter
+        newCounter := v.Increment()
+        fmt.Println(newCounter.count)
+    }
+}
+
+process(Counter{count: 5})  // prints: 6
+```
+
+The variable `v` holds the `Counter` value. You can call its methods and use it as a normal `Counter` because the compiler knows its type.
+
+---
+
+## Empty Structs Are Idiomatic for Signals and Sets
+
+An empty struct occupies zero bytes of memory:
+
+```go
+type signal struct{}
+
+var s signal
+fmt.Println(unsafe.Sizeof(s))  // prints: 0
+```
+
+This makes empty structs useful when you need a type for signaling or membership checking, but not for storing data:
+
+```go
+done := make(chan struct{})
+
+go func() {
+    // do work
+    close(done)  // signal completion
+}()
+
+<-done  // wait for signal
+```
+
+The channel carries no data. Its purpose is to signal an event. The empty struct is the appropriate type for this pattern.
+
+---
+
+## Maps as Sets Using Empty Struct Values
+
+Go does not have a built-in set type. The idiomatic approach uses a map with empty struct values:
+
+```go
+type Set map[int]struct{}
+
+func (s Set) Add(v int) {
+    s[v] = struct{}{}
+}
+
+func (s Set) Contains(v int) bool {
+    _, ok := s[v]
+    return ok
+}
+
+func (s Set) Remove(v int) {
+    delete(s, v)
+}
+```
+
+Usage:
+
+```go
+visited := make(Set)
+visited.Add(1)
+visited.Add(2)
+visited.Add(3)
+
+if visited.Contains(2) {
+    fmt.Println("2 has been visited")
+}
+```
+
+The keys represent membership. The values are meaningless and occupy no space. This pattern is efficient, intentional, and widely used in Go codebases.
+
+---
+
+## Go Separates Pure Logic from Side Effects
+
+Go encourages a programming style that separates computation from mutation:
+
+```go
+// Pure function: computes a result without modifying state
+func calculateTotal(items []Item) int {
+    total := 0
+    for _, item := range items {
+        total += item.Price
+    }
+    return total
+}
+
+// Side effect: modifies external state
+func saveToDB(db *Database, items []Item) error {
+    return db.Insert(items)
+}
+```
+
+The language design supports this separation through:
+
+- Returning values instead of modifying inputs
+- Passing functions as arguments for customizable behavior
+- Explicit error handling that makes failure modes visible
+
+```go
+func processItems(items []Item, transform func(Item) Item) []Item {
+    result := make([]Item, len(items))
+    for i, item := range items {
+        result[i] = transform(item)
+    }
+    return result
+}
+```
+
+The function takes a transformation function as a parameter. The logic is pure. Any side effects are the caller's responsibility.
+
+---
+
+## Imports Use Logical Names, Not Filesystem Paths
+
+When you import a package:
+
+```go
+import "github.com/example/mypackage"
+```
+
+You are importing by module path, not by filesystem location. The compiler resolves this path using the module cache and `go.mod` file. The path is an identity, not a directory.
+
+```go
+module myproject
+
+go 1.21
+
+require (
+    github.com/example/mypackage v1.2.3
+)
+```
+
+The module system:
+
+- Maps the import path to a cached directory
+- Resolves versions through `go.mod` and `go.sum`
+- Ensures reproducible builds across different machines
+
+The import path is the canonical name of the package, regardless of where it physically resides on disk.
+
+---
+
+## The Two Kinds of Switch in Go
+
+Go has two fundamentally different switch statements. They look similar, but they answer different questions.
+
+### Value Switch
+
+A value switch operates on values of a known static type:
+
+```go
+switch x {
+case 1:
+    fmt.Println("one")
+case 2:
+    fmt.Println("two")
+case 3:
+    fmt.Println("three")
+}
+```
+
+This answers: "Which value does `x` have?"
+
+Properties of value switches:
+
+- The variable `x` has a known static type at compile time
+- Each case must be comparable with `x` using the `==` operator
+- Multiple values can appear in a single case
+
+```go
+switch day {
+case "Saturday", "Sunday":
+    fmt.Println("weekend")
+case "Monday", "Tuesday", "Wednesday", "Thursday", "Friday":
+    fmt.Println("weekday")
+}
+```
+
+### Type Switch
+
+A type switch operates on the concrete type stored inside an interface:
+
+```go
+switch v := x.(type) {
+case int:
+    fmt.Println("integer:", v)
+case string:
+    fmt.Println("string:", v)
+}
+```
+
+This answers: "What is the concrete type of the value inside the interface?"
+
+Properties of type switches:
+
+- The switch expression must be an interface type
+- Each case is a type, not a value
+- Go checks type identity, not value equality
+- The variable `v` is rebound with the concrete type in each case branch
+
+### Why Go Needs Both
+
+These two questions are fundamentally different:
+
+| Question | Requires |
+|----------|----------|
+| Which value? | Known static type |
+| Which type? | Interface inspection |
+
+Attempting to mix them would make the language unsafe. Consider:
+
+```go
+var x interface{} = 10
+```
+
+Go cannot safely allow:
+
+```go
+switch x {
+case 10:
+    fmt.Println("ten")
+}
+```
+
+The problem is that the literal `10` is ambiguous. It could represent:
+
+- `int(10)`
+- `int64(10)`
+- A custom numeric type
+
+Without knowing the type, the comparison is undefined. Go enforces type resolution before value comparison.
+
+### The Correct Pattern When Both Matter
+
+When you need to check both type and value, resolve the type first:
+
+```go
+func handle(x interface{}) {
+    switch v := x.(type) {
+    case int:
+        if v == 10 {
+            fmt.Println("integer ten")
+        } else if v == 0 {
+            fmt.Println("integer zero")
+        }
+    case string:
+        if v == "hello" {
+            fmt.Println("greeting")
+        } else if v == "" {
+            fmt.Println("empty string")
+        }
+    }
+}
+```
+
+Type first, value second. This ordering is not a convention but a requirement of Go's type system.
+
+### Scoping in Type Switches
+
+In a type switch:
+
+```go
+switch v := x.(type) {
+case int:
+    fmt.Println(v * 2)
+}
+```
+
+The variable `v` is:
+
+- A new variable, not the same as any outer variable
+- Scoped to each case branch individually
+- Statically typed as the case type within that branch
+- Shadows any outer variable with the same name
+
+There is no ambiguity because Go's scoping rules determine which variable is referenced.
+
+### Summary
+
+A value switch chooses a branch based on data. A type switch chooses a branch based on what kind of thing the data is.
+
+---
+
+## The Core Mental Model
+
+Understanding Go's type system becomes clear when you ask two questions about any expression:
+
+1. What is the static type known at compile time?
+2. What is the concrete value at runtime?
+
+For interface types, also ask:
+
+3. What is the concrete type stored in the interface?
+
+```go
+var x interface{} = 42
+
+// Static type of x: interface{}
+// Concrete type in x: int
+// Concrete value in x: 42
+
+if v, ok := x.(int); ok {
+    // Static type of v: int
+    // Value of v: 42
+    fmt.Println(v + 1)  // 43
+}
+```
+
+When these questions have clear answers, the behavior of type assertions, type switches, and interface satisfaction becomes predictable.
