@@ -6,10 +6,12 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import { Menu, X } from "lucide-react";
 import { navigation } from "@/lib/navigation";
+import { useTheme } from "@/lib/theme-context";
 import { cn } from "@/lib/utils";
 
 export function Sidebar() {
     const pathname = usePathname();
+    const { theme } = useTheme();
     const [isOpen, setIsOpen] = useState(false);
 
     const closeSidebar = () => setIsOpen(false);
@@ -17,7 +19,10 @@ export function Sidebar() {
     const SidebarContent = () => (
         <>
             <Link href="/docs/go/getting-started" className="mb-8 mt-8 block" onClick={closeSidebar}>
-                <span className="text-xl font-bold text-white">DevNotes</span>
+                <span className={cn(
+                    "text-xl font-bold",
+                    theme === "dark" ? "text-white" : "text-[var(--paper-text)]"
+                )}>DevNotes</span>
             </Link>
 
             <nav className="space-y-6">
@@ -38,9 +43,13 @@ export function Sidebar() {
                                             onClick={closeSidebar}
                                             className={cn(
                                                 "block rounded-md px-3 py-2 text-sm transition-colors font-display",
-                                                isActive
-                                                    ? "bg-zinc-800 text-white"
-                                                    : "text-zinc-400 hover:bg-zinc-800/50 hover:text-white"
+                                                theme === "dark"
+                                                    ? isActive
+                                                        ? "bg-zinc-800 text-white"
+                                                        : "text-zinc-400 hover:bg-zinc-800/50 hover:text-white"
+                                                    : isActive
+                                                        ? "bg-[#e6dec9] text-[var(--paper-text)] font-semibold"
+                                                        : "text-[var(--paper-text)]/80 hover:bg-[#e6dec9]/50 hover:text-[var(--paper-text)]"
                                             )}
                                         >
                                             {item.title}
@@ -59,13 +68,23 @@ export function Sidebar() {
         <>
             <button
                 onClick={() => setIsOpen(true)}
-                className="fixed top-4 left-4 z-40 p-2 rounded-lg bg-zinc-900 border border-zinc-800 lg:hidden cursor-pointer"
+                className={cn(
+                    "fixed top-4 left-4 z-40 p-2 rounded-lg border lg:hidden cursor-pointer",
+                    theme === "dark"
+                        ? "bg-zinc-900 border-zinc-800"
+                        : "bg-paper border-zinc-200"
+                )}
                 aria-label="Open menu"
             >
-                <Menu className="w-5 h-5 text-white" />
+                <Menu className={cn("w-5 h-5", theme === "dark" ? "text-white" : "text-[var(--paper-text)]")} />
             </button>
 
-            <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-64 lg:flex-col border-r border-zinc-800 bg-zinc-950">
+            <aside className={cn(
+                "hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-64 lg:flex-col border-r transition-colors duration-200",
+                theme === "dark"
+                    ? "border-zinc-800 bg-zinc-950"
+                    : "border-zinc-200 bg-paper"
+            )}>
                 <div className="h-full overflow-y-auto overscroll-contain p-6">
                     <SidebarContent />
                 </div>
@@ -88,15 +107,23 @@ export function Sidebar() {
                             animate={{ x: 0 }}
                             exit={{ x: "-100%" }}
                             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                            className="fixed top-0 left-0 z-50 h-screen w-72 bg-zinc-950 border-r border-zinc-800 lg:hidden"
+                            className={cn(
+                                "fixed top-0 left-0 z-50 h-screen w-72 border-r lg:hidden transition-colors duration-200",
+                                theme === "dark"
+                                    ? "bg-zinc-950 border-zinc-800"
+                                    : "bg-paper border-zinc-200"
+                            )}
                         >
                             <div className="h-full overflow-y-auto overscroll-contain p-6">
                                 <button
                                     onClick={closeSidebar}
-                                    className="absolute top-4 right-4 p-2 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
+                                    className={cn(
+                                        "absolute top-4 right-4 p-2 rounded-lg transition-colors cursor-pointer",
+                                        theme === "dark" ? "hover:bg-zinc-800" : "hover:bg-[#e6dec9]/50"
+                                    )}
                                     aria-label="Close menu"
                                 >
-                                    <X className="w-5 h-5 text-zinc-400" />
+                                    <X className={cn("w-5 h-5", theme === "dark" ? "text-zinc-400" : "text-[var(--paper-text)]")} />
                                 </button>
                                 <SidebarContent />
                             </div>
