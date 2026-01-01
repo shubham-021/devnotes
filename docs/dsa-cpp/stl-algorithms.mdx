@@ -1,0 +1,202 @@
+---
+title: STL Algorithms
+description: Built-in algorithms and utility functions in C++
+---
+
+## Sorting
+
+### Basic Sort
+
+```cpp
+int a[] = {2, 1, 8, 5};
+sort(a, a + 4);  // {1, 2, 5, 8}
+
+vector<int> v = {3, 1, 4, 1, 5};
+sort(v.begin(), v.end()); // {1, 1, 3, 4, 5}
+```
+
+### Descending Order
+
+```cpp
+sort(a, a + n, greater<int>()); // {8, 5, 2, 1}
+```
+
+### Custom Comparator
+
+When you need a specific sorting logic, write a comparator function.
+
+**Problem**: Sort pairs by second element. If equal, sort by first element in descending order.
+
+```cpp
+pair<int, int> a[] = {{1,2}, {2,1}, {4,1}};
+// Desired result: {{4,1}, {2,1}, {1,2}}
+```
+
+**Solution**:
+
+```cpp
+bool comp(pair<int,int> p1, pair<int,int> p2) {
+    if (p1.second < p2.second) {
+        return true;  // p1 comes first if p1.second < p2.second
+    } else if (p1.second == p2.second) {
+        return p1.first > p2.first;  // Descending by first
+    }
+    return false;
+}
+
+sort(a, a + n, comp);
+```
+
+**How comparators work**: Return `true` if the first argument should come before the second.
+
+---
+
+## Bit Manipulation
+
+### Count Set Bits
+
+```cpp
+int num = 7;  // Binary: 111
+int cnt = __builtin_popcount(num);  // 3
+
+long long bigNum = 165786578687LL;
+int cnt = __builtin_popcountll(bigNum);
+```
+
+---
+
+## Permutations
+
+Generate all permutations of a string or container.
+
+```cpp
+string s = "123";
+
+// Must be sorted for all permutations
+sort(s.begin(), s.end());
+
+do {
+    cout << s << endl;
+} while (next_permutation(s.begin(), s.end()));
+```
+
+**Output**:
+```
+123
+132
+213
+231
+312
+321
+```
+
+`next_permutation` returns `false` when there are no more permutations.
+
+---
+
+## Finding Min/Max
+
+```cpp
+int a[] = {3, 1, 4, 1, 5, 9};
+
+int maxi = *max_element(a, a + 6);  // 9
+int mini = *min_element(a, a + 6);  // 1
+
+// For vectors
+int maxi = *max_element(v.begin(), v.end());
+```
+
+---
+
+## String Operations
+
+### Find Substring
+
+```cpp
+string s = "hello world";
+size_t pos = s.find("world");  // Returns 6
+
+if (pos != string::npos) {
+    cout << "Found at position " << pos;
+}
+```
+
+### Erase Substring
+
+```cpp
+string s = "hello world";
+s.erase(5, 6);  // Erase 6 chars starting at position 5
+// s = "hello"
+```
+
+### Character Frequency (Hashing)
+
+Use an array of size 26 to count character frequencies:
+
+```cpp
+string s = "aabbbcc";
+int freq[26] = {0};
+
+for (char c : s) {
+    freq[c - 'a']++;  // 'a' maps to 0, 'b' to 1, etc.
+}
+
+// freq[0] = 2 (a), freq[1] = 3 (b), freq[2] = 2 (c)
+```
+
+For uppercase letters, use `c - 'A'`.
+
+---
+
+## Numeric Conversions
+
+```cpp
+int num = 42;
+string s = to_string(num);  // "42"
+
+string s = "123";
+int num = stoi(s);  // 123
+```
+
+---
+
+## Binary Search
+
+```cpp
+vector<int> v = {1, 2, 3, 4, 5};
+
+// Returns true if element exists (must be sorted)
+bool found = binary_search(v.begin(), v.end(), 3);
+
+// Lower bound: first element >= value
+auto it = lower_bound(v.begin(), v.end(), 3);
+
+// Upper bound: first element > value
+auto it = upper_bound(v.begin(), v.end(), 3);
+```
+
+---
+
+## Other Useful Functions
+
+```cpp
+// Reverse
+reverse(v.begin(), v.end());
+
+// Rotate
+rotate(v.begin(), v.begin() + 2, v.end());
+// {1,2,3,4,5} → {3,4,5,1,2}
+
+// Accumulate (sum)
+int sum = accumulate(v.begin(), v.end(), 0);
+
+// Count occurrences
+int cnt = count(v.begin(), v.end(), 3);
+
+// Fill
+fill(v.begin(), v.end(), 0);  // All zeros
+
+// Unique (removes consecutive duplicates)
+auto it = unique(v.begin(), v.end());
+v.erase(it, v.end());
+```

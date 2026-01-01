@@ -1,0 +1,460 @@
+---
+title: React Hook Form
+description: Building performant forms with validation using React Hook Form and Zod
+---
+
+## Overview
+
+React Hook Form is a library for managing forms in React with minimal re-renders. Instead of storing every keystroke in state (causing re-renders), it uses uncontrolled inputs with refs, only updating when necessary.
+
+### Installation
+
+```bash
+npm install react-hook-form
+```
+
+For Zod integration:
+
+```bash
+npm install react-hook-form @hookform/resolvers zod
+```
+
+---
+
+## Basic Setup
+
+The `useForm` hook is the foundation of React Hook Form.
+
+```tsx
+import { useForm } from 'react-hook-form';
+
+type FormData = {
+  username: string;
+  email: string;
+};
+
+export default function RegisterForm() {
+  const { register, handleSubmit, formState: { errors } } = useForm<FormData>();
+
+  const onSubmit = (data: FormData) => {
+    console.log(data);
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <input {...register('username')} />
+      <input {...register('email')} />
+      <button type="submit">Submit</button>
+    </form>
+  );
+}
+```
+
+### Core Concepts
+
+| Function | Purpose |
+|----------|---------|
+| `register` | Connects an input to the form |
+| `handleSubmit` | Wraps your submit handler with validation |
+| `formState` | Contains form state (errors, isSubmitting, etc.) |
+
+---
+
+## The register Function
+
+`register` returns props that connect an input to React Hook Form. Spread it onto your input element.
+
+```tsx
+<input {...register('fieldName')} />
+```
+
+This is equivalent to:
+
+```tsx
+<input 
+  name="fieldName"
+  ref={/* internal ref */}
+  onChange={/* internal handler */}
+  onBlur={/* internal handler */}
+/>
+```
+
+### Register with Options
+
+Add validation rules directly:
+
+```tsx
+<input 
+  {...register('email', {
+    required: 'Email is required',
+    pattern: {
+      value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+      message: 'Invalid email address'
+    }
+  })} 
+/>
+```
+
+Common validation options:
+
+| Option | Description |
+|--------|-------------|
+| `required` | Field must have a value |
+| `minLength` | Minimum character count |
+| `maxLength` | Maximum character count |
+| `min` | Minimum numeric value |
+| `max` | Maximum numeric value |
+| `pattern` | Regex pattern to match |
+| `validate` | Custom validation function |
+
+---
+
+## Displaying Errors
+
+Access errors through `formState.errors`. Each field with an error has a `message` property.
+
+```tsx
+const { register, handleSubmit, formState: { errors } } = useForm<FormData>();
+
+return (
+  <form onSubmit={handleSubmit(onSubmit)}>
+    <div>
+      <input {...register('username', { required: 'Username is required' })} />
+      {errors.username && <p>{errors.username.message}</p>}
+    </div>
+
+    <div>
+      <input {...register('email', { required: 'Email is required' })} />
+      {errors.email && <p>{errors.email.message}</p>}
+    </div>
+
+    <button type="submit">Submit</button>
+  </form>
+);
+```
+
+---
+
+## Form State
+
+`formState` provides information about the form's current state.
+
+```tsx
+const { 
+  formState: { 
+    errors,        // Validation errors
+    isSubmitting,  // Form is being submitted
+    isValid,       // All fields pass validation
+    isDirty,       // Any field has been modified
+    isSubmitted,   // Form has been submitted at least once
+    touchedFields  // Fields that have been focused
+  } 
+} = useForm<FormData>();
+```
+
+### Disabling Submit During Submission
+
+```tsx
+<button disabled={isSubmitting} type="submit">
+  {isSubmitting ? 'Submitting...' : 'Submit'}
+</button>
+```
+
+---
+
+## Zod Integration
+
+Zod is a TypeScript-first schema validation library. Integrating it with React Hook Form gives you type-safe validation with reusable schemas.
+
+### Defining a Schema
+
+```tsx
+import { z } from 'zod';
+
+const schema = z.object({
+  username: z.string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(20, 'Username cannot exceed 20 characters'),
+  email: z.string()
+    .email('Invalid email address'),
+  password: z.string()
+    .min(8, 'Password must be at least 8 characters'),
+  confirmPassword: z.string()
+}).refine(data => data.password === data.confirmPassword, {
+  message: 'Passwords do not match',
+  path: ['confirmPassword']
+});
+
+// Infer TypeScript type from schema
+type FormData = z.infer<typeof schema>;
+```
+
+### Connecting Zod to React Hook Form
+
+Use the `zodResolver` to connect your schema:
+
+```tsx
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+const schema = z.object({
+  username: z.string().min(3, 'Username must be at least 3 characters'),
+  email: z.string().email('Invalid email address'),
+});
+
+type FormData = z.infer<typeof schema>;
+
+export default function RegisterForm() {
+  const {
+    register,
+    handleSubmit,
+    formState: { errors }
+  } = useForm<FormData>({
+    resolver: zodResolver(schema)
+  });
+
+  const onSubmit = (data: FormData) => {
+    console.log(data);
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <div>
+        <input {...register('username')} placeholder="Username" />
+        {errors.username && <p>{errors.username.message}</p>}
+      </div>
+
+      <div>
+        <input {...register('email')} placeholder="Email" />
+        {errors.email && <p>{errors.email.message}</p>}
+      </div>
+
+      <button type="submit">Register</button>
+    </form>
+  );
+}
+```
+
+### Common Zod Validations
+
+```tsx
+const schema = z.object({
+  // String validations
+  name: z.string().min(1, 'Required'),
+  email: z.string().email('Invalid email'),
+  url: z.string().url('Invalid URL'),
+  
+  // Number validations
+  age: z.number().min(18, 'Must be 18+').max(100),
+  price: z.number().positive('Must be positive'),
+  
+  // Enum/literal
+  role: z.enum(['admin', 'user', 'guest']),
+  
+  // Optional fields
+  bio: z.string().optional(),
+  nickname: z.string().nullable(),
+  
+  // Arrays
+  tags: z.array(z.string()).min(1, 'Add at least one tag'),
+  
+  // Coercion (string input to number)
+  quantity: z.coerce.number().min(1)
+});
+```
+
+---
+
+## Setting Errors Manually
+
+Use `setError` to add errors programmatically, typically for server-side validation.
+
+```tsx
+const { setError } = useForm<FormData>();
+
+const onSubmit = async (data: FormData) => {
+  const result = await submitToServer(data);
+
+  if (result.error === 'email_taken') {
+    setError('email', {
+      type: 'server',
+      message: 'This email is already registered'
+    });
+  }
+};
+```
+
+### Root Level Errors
+
+For errors not tied to a specific field:
+
+```tsx
+setError('root', {
+  type: 'server',
+  message: 'Something went wrong. Please try again.'
+});
+
+// Display
+{errors.root && <p>{errors.root.message}</p>}
+```
+
+---
+
+## Default Values
+
+Set initial form values:
+
+```tsx
+const { register } = useForm<FormData>({
+  defaultValues: {
+    username: '',
+    email: '',
+    role: 'user'
+  }
+});
+```
+
+For async default values (editing existing data):
+
+```tsx
+const { register, reset } = useForm<FormData>();
+
+useEffect(() => {
+  async function fetchUser() {
+    const user = await getUser(userId);
+    reset(user); // Populate form with fetched data
+  }
+  fetchUser();
+}, [userId, reset]);
+```
+
+---
+
+## Watching Values
+
+Access field values in real-time with `watch`:
+
+```tsx
+const { register, watch } = useForm<FormData>();
+
+// Watch single field
+const username = watch('username');
+
+// Watch multiple fields
+const [email, password] = watch(['email', 'password']);
+
+// Watch all fields
+const allValues = watch();
+```
+
+Use `watch` for conditional rendering:
+
+```tsx
+const showBillingAddress = watch('differentBillingAddress');
+
+return (
+  <form>
+    <input type="checkbox" {...register('differentBillingAddress')} />
+    
+    {showBillingAddress && (
+      <div>
+        <input {...register('billingAddress')} />
+      </div>
+    )}
+  </form>
+);
+```
+
+---
+
+## Resetting the Form
+
+Clear or reset form values:
+
+```tsx
+const { reset } = useForm<FormData>();
+
+// Reset to default values
+reset();
+
+// Reset to specific values
+reset({
+  username: 'newUser',
+  email: 'new@example.com'
+});
+
+// After successful submission
+const onSubmit = async (data: FormData) => {
+  await submitData(data);
+  reset(); // Clear form
+};
+```
+
+---
+
+## Validation Modes
+
+Control when validation runs:
+
+```tsx
+const { register } = useForm<FormData>({
+  mode: 'onBlur' // Validate when user leaves field
+});
+```
+
+| Mode | When Validation Runs |
+|------|---------------------|
+| `onSubmit` | Only on form submission (default) |
+| `onBlur` | When user leaves a field |
+| `onChange` | On every keystroke |
+| `onTouched` | On first blur, then on every change |
+| `all` | On blur and change |
+
+---
+
+## Quick Reference
+
+### Setup
+
+```tsx
+const {
+  register,
+  handleSubmit,
+  formState: { errors, isSubmitting },
+  setError,
+  reset,
+  watch
+} = useForm<FormData>({
+  resolver: zodResolver(schema),
+  defaultValues: { field: 'value' },
+  mode: 'onBlur'
+});
+```
+
+### Input Registration
+
+```tsx
+<input {...register('fieldName')} />
+```
+
+### Error Display
+
+```tsx
+{errors.fieldName && <p>{errors.fieldName.message}</p>}
+```
+
+### Form Submission
+
+```tsx
+<form onSubmit={handleSubmit(onSubmit)}>
+```
+
+### Zod Schema
+
+```tsx
+const schema = z.object({
+  field: z.string().min(1, 'Required')
+});
+type FormData = z.infer<typeof schema>;
+```

@@ -1,0 +1,159 @@
+---
+title: Server & Client Components
+description: Understanding the difference between server and client components in Next.js
+---
+
+## The Two Types of Components
+
+In modern Next.js (App Router), components are either **Server Components** or **Client Components**.
+
+| Aspect | Server Components | Client Components |
+|--------|-------------------|-------------------|
+| **Default** | Yes (no directive needed) | Requires `"use client"` |
+| **Runs on** | Server only | Server (initial) + Browser |
+| **Can use** | `async/await`, direct DB access | Hooks, event handlers, browser APIs |
+| **Bundle size** | Not sent to browser | Included in JavaScript bundle |
+
+---
+
+## Server Components (Default)
+
+By default, all components in Next.js are Server Components. They render on the server and send HTML to the browser.
+
+```tsx
+// app/users/page.tsx — This is a Server Component
+import { db } from '@/lib/database'
+
+export default async function UsersPage() {
+  // Direct database access (no API needed)
+  const users = await db.user.findMany()
+  
+  return (
+    <ul>
+      {users.map(user => (
+        <li key={user.id}>{user.name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+**Server Components can**:
+- Be `async` functions
+- Access databases, filesystems, and secrets directly
+- Fetch data without exposing API endpoints
+
+**Server Components cannot**:
+- Use React hooks (`useState`, `useEffect`)
+- Use event handlers (`onClick`, `onChange`)
+- Use browser-only APIs (`window`, `localStorage`)
+
+---
+
+## Client Components
+
+When you need interactivity, mark the component with `"use client"`:
+
+```tsx
+"use client"
+
+import { useState } from 'react'
+
+export default function Counter() {
+  const [count, setCount] = useState(0)
+  
+  return (
+    <button onClick={() => setCount(count + 1)}>
+      Count: {count}
+    </button>
+  )
+}
+```
+
+The `"use client"` directive tells Next.js: *"This component needs JavaScript in the browser."*
+
+### When to Use Client Components
+
+Add `"use client"` when you need:
+
+- **React hooks** — `useState`, `useEffect`, `useContext`, etc.
+- **Event handlers** — `onClick`, `onChange`, `onSubmit`, etc.
+- **Browser APIs** — `window`, `document`, `localStorage`, etc.
+- **Third-party libraries** that use any of the above
+
+---
+
+## Common Error: Using Hooks in Server Components
+
+```tsx
+// ❌ This will fail — no "use client" directive
+import { useState } from 'react'
+
+export default function Counter() {
+  const [count, setCount] = useState(0) // Error!
+  return <button>{count}</button>
+}
+```
+
+**Error message**: *"You're importing a component that needs useState. It only works in a Client Component..."*
+
+**Fix**: Add `"use client"` at the top of the file.
+
+---
+
+## Mixing Server and Client Components
+
+A common pattern is to keep data fetching in Server Components and pass data down to Client Components:
+
+```tsx
+// app/dashboard/page.tsx — Server Component
+import { db } from '@/lib/database'
+import DashboardChart from './chart'
+
+export default async function DashboardPage() {
+  const data = await db.analytics.getChartData()
+  
+  return (
+    <div>
+      <h1>Dashboard</h1>
+      {/* Client component receives server-fetched data */}
+      <DashboardChart data={data} />
+    </div>
+  )
+}
+```
+
+```tsx
+// app/dashboard/chart.tsx — Client Component
+"use client"
+
+import { useState } from 'react'
+
+export default function DashboardChart({ data }) {
+  const [filter, setFilter] = useState('all')
+  
+  return (
+    <div>
+      <select onChange={e => setFilter(e.target.value)}>
+        <option value="all">All</option>
+        <option value="week">This Week</option>
+      </select>
+      {/* Render chart with data and filter */}
+    </div>
+  )
+}
+```
+
+**Best practice**: Keep Client Components as small as possible. The less JavaScript shipped to the browser, the faster your app loads.
+
+---
+
+## Quick Reference
+
+| Need | Use |
+|------|-----|
+| Fetch data, access database | Server Component |
+| `useState`, `useEffect` | Client Component |
+| `onClick`, `onChange` | Client Component |
+| `window`, `localStorage` | Client Component |
+| Static content, no interactivity | Server Component |

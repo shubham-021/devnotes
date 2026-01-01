@@ -1,0 +1,143 @@
+---
+title: Rendering Strategies
+description: Understanding SSR, SSG, ISR, and CSR in Next.js
+---
+
+## React vs Next.js Rendering
+
+### Standard React (Client-Side Rendering)
+
+In a typical React app:
+
+1. Server sends a minimal HTML shell with JavaScript bundles
+2. Browser downloads and executes JavaScript
+3. React builds the UI in the browser
+4. User sees a loading state until rendering completes
+5. All data fetching happens client-side
+
+```html
+<!-- What the server sends -->
+<div id="root"></div>
+<script src="bundle.js"></script>
+```
+
+**Problem**: Search engines see an empty page, and users wait for JavaScript to load.
+
+### Next.js (Multiple Strategies)
+
+Next.js extends React with multiple rendering options:
+
+| Strategy | When HTML is Generated | Best For |
+|----------|------------------------|----------|
+| **SSR** | Every request | Dynamic, personalized content |
+| **SSG** | Build time | Static content (blogs, docs) |
+| **ISR** | Build time + background updates | Content that changes periodically |
+| **CSR** | In the browser | Highly interactive components |
+
+---
+
+## Server-Side Rendering (SSR)
+
+HTML is generated on the server for **every request**.
+
+```tsx
+// app/users/page.tsx
+async function getUsers() {
+  const res = await fetch('https://api.example.com/users', {
+    cache: 'no-store' // Ensures fresh data on every request
+  })
+  return res.json()
+}
+
+export default async function UsersPage() {
+  const users = await getUsers()
+  
+  return (
+    <ul>
+      {users.map(user => (
+        <li key={user.id}>{user.name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+**What happens**:
+1. Browser requests `/users`
+2. Next.js server fetches data from the API
+3. Server renders the component with real data
+4. Browser receives fully populated HTML
+
+If you inspect the page source, you'll see actual user names — not template variables.
+
+---
+
+## Static Site Generation (SSG)
+
+HTML is generated **once at build time** and reused for every request.
+
+```tsx
+// app/posts/page.tsx
+async function getPosts() {
+  const res = await fetch('https://api.example.com/posts', {
+    cache: 'force-cache' // Default: cache indefinitely
+  })
+  return res.json()
+}
+
+export default async function PostsPage() {
+  const posts = await getPosts()
+  
+  return (
+    <ul>
+      {posts.map(post => (
+        <li key={post.id}>{post.title}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+**Advantages**: Extremely fast (served from CDN), no server computation per request.
+
+---
+
+## Incremental Static Regeneration (ISR)
+
+Combines static generation with the ability to update pages **after deployment**.
+
+```tsx
+async function getPosts() {
+  const res = await fetch('https://api.example.com/posts', {
+    next: { revalidate: 60 } // Regenerate every 60 seconds
+  })
+  return res.json()
+}
+```
+
+**How it works**:
+1. First request serves the cached static page
+2. After 60 seconds, next request triggers background regeneration
+3. New version is cached and served to subsequent requests
+
+---
+
+## Loading States
+
+While server components fetch data, you can show a loading UI by creating a `loading.tsx` file:
+
+```tsx
+// app/users/loading.tsx
+export default function Loading() {
+  return <div>Loading users...</div>
+}
+```
+
+Next.js automatically wraps your page in a Suspense boundary and shows this component while data loads.
+
+### Simulating Slow Requests (Development)
+
+```tsx
+// Add artificial delay for testing loading states
+await new Promise(resolve => setTimeout(resolve, 5000))
+```

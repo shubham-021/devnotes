@@ -1,13 +1,92 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
-import { Menu, X } from "lucide-react";
+import { Menu, X, ChevronDown } from "lucide-react";
 import { navigation } from "@/lib/navigation";
 import { useTheme } from "@/lib/theme-context";
 import { cn } from "@/lib/utils";
+
+interface CollapsibleSectionProps {
+    title: string;
+    items: { title: string; slug: string }[];
+    pathname: string;
+    theme: string;
+    onLinkClick?: () => void;
+}
+
+function CollapsibleSection({ title, items, pathname, theme, onLinkClick }: CollapsibleSectionProps) {
+    const hasActiveItem = items.some(item => pathname === `/docs/${item.slug}`);
+    const [isExpanded, setIsExpanded] = useState(hasActiveItem);
+
+    useEffect(() => {
+        if (hasActiveItem) {
+            setIsExpanded(true);
+        }
+    }, [hasActiveItem]);
+
+    return (
+        <div>
+            <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className={cn(
+                    "w-full flex items-center justify-between mb-2 pl-3 pr-2 py-1 border-l-2 border-emerald-500 uppercase tracking-widest text-lg font-extrabold transition-colors cursor-pointer rounded-r-md",
+                    theme === "dark"
+                        ? "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                        : "text-zinc-500 hover:text-zinc-700 hover:bg-[#e6dec9]/50"
+                )}
+            >
+                <span>{title}</span>
+                <motion.span
+                    animate={{ rotate: isExpanded ? 180 : 0 }}
+                    transition={{ duration: 0.2 }}
+                >
+                    <ChevronDown className="w-4 h-4" />
+                </motion.span>
+            </button>
+
+            <AnimatePresence initial={false}>
+                {isExpanded && (
+                    <motion.ul
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="space-y-1 overflow-hidden"
+                    >
+                        {items.map((item) => {
+                            const href = `/docs/${item.slug}`;
+                            const isActive = pathname === href;
+
+                            return (
+                                <li key={item.slug}>
+                                    <Link
+                                        href={href}
+                                        onClick={onLinkClick}
+                                        className={cn(
+                                            "block rounded-md px-3 py-2 text-sm transition-colors font-display",
+                                            theme === "dark"
+                                                ? isActive
+                                                    ? "bg-zinc-800 text-white"
+                                                    : "text-zinc-400 hover:bg-zinc-800/50 hover:text-white"
+                                                : isActive
+                                                    ? "bg-[#e6dec9] text-var(--paper-text) font-semibold"
+                                                    : "text-(--paper-text)/80 hover:bg-[#e6dec9]/50 hover:text-(--paper-text)"
+                                        )}
+                                    >
+                                        {item.title}
+                                    </Link>
+                                </li>
+                            );
+                        })}
+                    </motion.ul>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+}
 
 export function Sidebar() {
     const pathname = usePathname();
@@ -21,44 +100,20 @@ export function Sidebar() {
             <Link href="/docs/go/getting-started" className="mb-8 mt-8 block" onClick={closeSidebar}>
                 <span className={cn(
                     "text-xl font-bold",
-                    theme === "dark" ? "text-white" : "text-[var(--paper-text)]"
+                    theme === "dark" ? "text-white" : "text-(--paper-text)"
                 )}>DevNotes</span>
             </Link>
 
-            <nav className="space-y-6">
+            <nav className="space-y-4">
                 {navigation.map((section) => (
-                    <div key={section.title}>
-                        <h3 className="mb-3 pl-3 border-l-2 border-emerald-500 uppercase tracking-widest text-zinc-500 text-lg font-extrabold">
-                            {section.title}
-                        </h3>
-                        <ul className="space-y-1">
-                            {section.items.map((item) => {
-                                const href = `/docs/${item.slug}`;
-                                const isActive = pathname === href;
-
-                                return (
-                                    <li key={item.slug}>
-                                        <Link
-                                            href={href}
-                                            onClick={closeSidebar}
-                                            className={cn(
-                                                "block rounded-md px-3 py-2 text-sm transition-colors font-display",
-                                                theme === "dark"
-                                                    ? isActive
-                                                        ? "bg-zinc-800 text-white"
-                                                        : "text-zinc-400 hover:bg-zinc-800/50 hover:text-white"
-                                                    : isActive
-                                                        ? "bg-[#e6dec9] text-[var(--paper-text)] font-semibold"
-                                                        : "text-[var(--paper-text)]/80 hover:bg-[#e6dec9]/50 hover:text-[var(--paper-text)]"
-                                            )}
-                                        >
-                                            {item.title}
-                                        </Link>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    </div>
+                    <CollapsibleSection
+                        key={section.title}
+                        title={section.title}
+                        items={section.items}
+                        pathname={pathname}
+                        theme={theme}
+                        onLinkClick={closeSidebar}
+                    />
                 ))}
             </nav>
         </>
@@ -76,7 +131,7 @@ export function Sidebar() {
                 )}
                 aria-label="Open menu"
             >
-                <Menu className={cn("w-5 h-5", theme === "dark" ? "text-white" : "text-[var(--paper-text)]")} />
+                <Menu className={cn("w-5 h-5", theme === "dark" ? "text-white" : "text-(--paper-text)")} />
             </button>
 
             <aside className={cn(
@@ -123,7 +178,7 @@ export function Sidebar() {
                                     )}
                                     aria-label="Close menu"
                                 >
-                                    <X className={cn("w-5 h-5", theme === "dark" ? "text-zinc-400" : "text-[var(--paper-text)]")} />
+                                    <X className={cn("w-5 h-5", theme === "dark" ? "text-zinc-400" : "text-(--paper-text)")} />
                                 </button>
                                 <SidebarContent />
                             </div>

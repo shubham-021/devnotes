@@ -1,0 +1,389 @@
+---
+title: Problem Solving Patterns
+description: Common patterns and approaches for DSA problems
+---
+
+## The Three-Step Approach
+
+Always approach problems systematically:
+
+1. **Brute Force** → Start with the obvious solution
+2. **Better** → Optimize time or space
+3. **Optimal** → Best possible complexity
+
+Not every problem has an optimal solution beyond brute force.
+
+---
+
+## Example 1: Largest Element
+
+**Problem**: Find the largest element in an array.
+
+### Brute Force
+
+Sort the array and return the last element.
+
+```cpp
+int largest(vector<int>& arr) {
+    sort(arr.begin(), arr.end());
+    return arr.back();
+}
+```
+
+**Time**: O(n log n) for sorting
+
+### Optimal
+
+Single pass with a variable to track maximum.
+
+```cpp
+int largest(vector<int>& arr) {
+    int maxi = arr[0];
+    for (int i = 1; i < arr.size(); i++) {
+        if (arr[i] > maxi) {
+            maxi = arr[i];
+        }
+    }
+    return maxi;
+}
+```
+
+**Time**: O(n) | **Space**: O(1)
+
+---
+
+## Example 2: Second Largest Element
+
+**Problem**: Find the second largest element (handle duplicates).
+
+### Brute Force
+
+Sort and traverse backward to find the second distinct largest.
+
+```cpp
+int secondLargest(vector<int>& arr) {
+    sort(arr.begin(), arr.end());
+    int largest = arr.back();
+    for (int i = arr.size() - 2; i >= 0; i--) {
+        if (arr[i] != largest) {
+            return arr[i];
+        }
+    }
+    return -1;  // No second largest
+}
+```
+
+**Time**: O(n log n) + O(n) = O(n log n)
+
+### Better (Two Passes)
+
+Find largest first, then find largest among remaining.
+
+```cpp
+int secondLargest(vector<int>& arr) {
+    int largest = *max_element(arr.begin(), arr.end());
+    int second = INT_MIN;
+    
+    for (int x : arr) {
+        if (x != largest && x > second) {
+            second = x;
+        }
+    }
+    return (second == INT_MIN) ? -1 : second;
+}
+```
+
+**Time**: O(2n) = O(n)
+
+### Optimal (Single Pass)
+
+Track both largest and second largest simultaneously.
+
+```cpp
+int secondLargest(vector<int>& arr) {
+    int largest = INT_MIN, second = INT_MIN;
+    
+    for (int x : arr) {
+        if (x > largest) {
+            second = largest;
+            largest = x;
+        } else if (x > second && x != largest) {
+            second = x;
+        }
+    }
+    return (second == INT_MIN) ? -1 : second;
+}
+```
+
+**Time**: O(n) | **Space**: O(1)
+
+---
+
+## Common Patterns
+
+### Prefix Sum
+
+Use when you need to calculate subarray sums repeatedly.
+
+**Problem**: Count subarrays with sum equal to k.
+
+```cpp
+int subarraySum(vector<int>& nums, int k) {
+    unordered_map<int, int> prefixCount;
+    prefixCount[0] = 1;  // Empty prefix
+    
+    int sum = 0, count = 0;
+    for (int num : nums) {
+        sum += num;
+        // If (sum - k) was seen before, we found subarrays
+        if (prefixCount.count(sum - k)) {
+            count += prefixCount[sum - k];
+        }
+        prefixCount[sum]++;
+    }
+    return count;
+}
+```
+
+### Product Except Self
+
+Use prefix and suffix products when division isn't allowed.
+
+```cpp
+vector<int> productExceptSelf(vector<int>& nums) {
+    int n = nums.size();
+    vector<int> result(n, 1);
+    
+    // Prefix products
+    int prefix = 1;
+    for (int i = 0; i < n; i++) {
+        result[i] = prefix;
+        prefix *= nums[i];
+    }
+    
+    // Suffix products
+    int suffix = 1;
+    for (int i = n - 1; i >= 0; i--) {
+        result[i] *= suffix;
+        suffix *= nums[i];
+    }
+    
+    return result;
+}
+```
+
+### Two Sum Pattern
+
+Extends to 3Sum, 4Sum with nested loops.
+
+```cpp
+// Two Sum (unsorted)
+vector<int> twoSum(vector<int>& nums, int target) {
+    unordered_map<int, int> seen;
+    for (int i = 0; i < nums.size(); i++) {
+        int complement = target - nums[i];
+        if (seen.count(complement)) {
+            return {seen[complement], i};
+        }
+        seen[nums[i]] = i;
+    }
+    return {};
+}
+
+// Two Sum (sorted) - Two Pointers
+vector<int> twoSumSorted(vector<int>& nums, int target) {
+    int left = 0, right = nums.size() - 1;
+    while (left < right) {
+        int sum = nums[left] + nums[right];
+        if (sum == target) return {left, right};
+        else if (sum < target) left++;
+        else right--;
+    }
+    return {};
+}
+```
+
+### Binary Search on Answer
+
+Use for "Minimize the Maximum" or "Maximize the Minimum" problems.
+
+**Example**: Book Allocation — minimize the maximum pages assigned to any student.
+
+```cpp
+bool isPossible(vector<int>& pages, int students, int maxPages) {
+    int count = 1, currentSum = 0;
+    for (int p : pages) {
+        if (p > maxPages) return false;
+        if (currentSum + p > maxPages) {
+            count++;
+            currentSum = p;
+        } else {
+            currentSum += p;
+        }
+    }
+    return count <= students;
+}
+
+int allocateBooks(vector<int>& pages, int students) {
+    int low = *max_element(pages.begin(), pages.end());
+    int high = accumulate(pages.begin(), pages.end(), 0);
+    int result = high;
+    
+    while (low <= high) {
+        int mid = low + (high - low) / 2;
+        if (isPossible(pages, students, mid)) {
+            result = mid;
+            high = mid - 1;  // Try to minimize further
+        } else {
+            low = mid + 1;
+        }
+    }
+    return result;
+}
+```
+
+---
+
+## Recursion Patterns
+
+### Subset/Combination (Include or Exclude)
+
+Each element has two choices: be included or excluded.
+
+```cpp
+void subsets(vector<int>& nums, int idx, vector<int>& current, 
+             vector<vector<int>>& result) {
+    if (idx == nums.size()) {
+        result.push_back(current);
+        return;
+    }
+    
+    // Exclude current element
+    subsets(nums, idx + 1, current, result);
+    
+    // Include current element
+    current.push_back(nums[idx]);
+    subsets(nums, idx + 1, current, result);
+    current.pop_back();
+}
+```
+
+### Permutations (Swap and Recurse)
+
+```cpp
+void permute(vector<int>& nums, int idx, vector<vector<int>>& result) {
+    if (idx == nums.size()) {
+        result.push_back(nums);
+        return;
+    }
+    
+    for (int i = idx; i < nums.size(); i++) {
+        swap(nums[idx], nums[i]);
+        permute(nums, idx + 1, result);
+        swap(nums[idx], nums[i]);  // Backtrack
+    }
+}
+```
+
+---
+
+## Data Structure Selection
+
+| Problem Type | Recommended DS |
+|--------------|----------------|
+| Frequency counting | `unordered_map` |
+| Unique elements | `unordered_set` |
+| Sorted traversal needed | `map`, `set` |
+| Kth smallest/largest | BST or Heap |
+| Range queries | Segment Tree |
+| Dynamic connectivity | Union-Find |
+
+---
+
+## Linked List Tips
+
+### Reversing
+
+Always save `next` before modifying pointers:
+
+```cpp
+ListNode* reverse(ListNode* head) {
+    ListNode *prev = nullptr, *curr = head;
+    while (curr) {
+        ListNode* next = curr->next;  // Save first!
+        curr->next = prev;
+        prev = curr;
+        curr = next;
+    }
+    return prev;
+}
+```
+
+### Finding Duplicates in Constant Space
+
+Use the array as an implicit linked list with Floyd's algorithm:
+
+```cpp
+int findDuplicate(vector<int>& nums) {
+    int slow = nums[0], fast = nums[0];
+    
+    do {
+        slow = nums[slow];
+        fast = nums[nums[fast]];
+    } while (slow != fast);
+    
+    slow = nums[0];
+    while (slow != fast) {
+        slow = nums[slow];
+        fast = nums[fast];
+    }
+    return slow;
+}
+```
+
+---
+
+## String Tips
+
+### Group Anagrams
+
+Use sorted string or character count as key:
+
+```cpp
+vector<vector<string>> groupAnagrams(vector<string>& strs) {
+    unordered_map<string, vector<string>> groups;
+    
+    for (string& s : strs) {
+        string key = s;
+        sort(key.begin(), key.end());
+        groups[key].push_back(s);
+    }
+    
+    vector<vector<string>> result;
+    for (auto& [key, group] : groups) {
+        result.push_back(group);
+    }
+    return result;
+}
+```
+
+### Longest Substring Without Repeating
+
+Use sliding window with set/map:
+
+```cpp
+int lengthOfLongestSubstring(string s) {
+    unordered_set<char> seen;
+    int left = 0, maxLen = 0;
+    
+    for (int right = 0; right < s.size(); right++) {
+        while (seen.count(s[right])) {
+            seen.erase(s[left]);
+            left++;
+        }
+        seen.insert(s[right]);
+        maxLen = max(maxLen, right - left + 1);
+    }
+    return maxLen;
+}
+```

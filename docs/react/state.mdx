@@ -1,0 +1,299 @@
+---
+title: State
+description: Understanding React state, useState hook, and how state updates work
+---
+
+## What is State?
+
+**State** is a component's memory. It holds data that can change over time, and when it changes, React re-renders the component to reflect the new data.
+
+```jsx
+import { useState } from 'react';
+
+function Counter() {
+  const [count, setCount] = useState(0);
+  
+  return (
+    <button onClick={() => setCount(count + 1)}>
+      Count: {count}
+    </button>
+  );
+}
+```
+
+When you click the button:
+1. `setCount` is called with the new value
+2. React schedules a re-render
+3. The component runs again with the updated `count`
+4. The UI shows the new value
+
+---
+
+## Why Not Regular Variables?
+
+```jsx
+// Wrong: This doesn't work
+function Counter() {
+  let count = 0;
+  
+  function handleClick() {
+    count = count + 1;
+    console.log(count); // Increases, but UI doesn't update
+  }
+  
+  return <button onClick={handleClick}>Count: {count}</button>;
+}
+```
+
+Regular variables don't trigger re-renders. React doesn't know they changed.
+
+```jsx
+// Correct: This works
+function Counter() {
+  const [count, setCount] = useState(0);
+  
+  function handleClick() {
+    setCount(count + 1); // React knows to re-render
+  }
+  
+  return <button onClick={handleClick}>Count: {count}</button>;
+}
+```
+
+State tells React: "This value changed. Re-render me!"
+
+---
+
+## The useState Hook
+
+```jsx
+const [value, setValue] = useState(initialValue);
+```
+
+| Part | Purpose |
+|------|---------|
+| `value` | Current state value |
+| `setValue` | Function to update the state |
+| `initialValue` | Starting value (only used on first render) |
+
+### Examples
+
+```jsx
+// Number
+const [count, setCount] = useState(0);
+
+// String
+const [name, setName] = useState('');
+
+// Boolean
+const [isOpen, setIsOpen] = useState(false);
+
+// Object
+const [user, setUser] = useState({ name: '', email: '' });
+
+// Array
+const [items, setItems] = useState([]);
+```
+
+---
+
+## How State Updates Work
+
+State updates in React are **asynchronous** and **batched**. This is crucial to understand.
+
+### The Problem: Multiple Updates
+
+```jsx
+function handleClick() {
+  setCount(count + 1);
+  setCount(count + 1);
+  setCount(count + 1);
+}
+// Result: count only increases by 1, not 3!
+```
+
+Why? All three calls use the same `count` value from the current render.
+
+If `count` is `0`:
+- First call: "Set count to 0 + 1"
+- Second call: "Set count to 0 + 1" (still using 0)
+- Third call: "Set count to 0 + 1" (still using 0)
+- Result: count becomes 1
+
+### The Solution: Functional Updates
+
+```jsx
+function handleClick() {
+  setCount(prev => prev + 1);
+  setCount(prev => prev + 1);
+  setCount(prev => prev + 1);
+}
+// Result: count increases by 3!
+```
+
+With functional updates, each call receives the **latest** value:
+
+If `count` is `0`:
+- First call: receives 0, returns 1
+- Second call: receives 1, returns 2
+- Third call: receives 2, returns 3
+- Result: count becomes 3
+
+### When to Use Each Form
+
+```jsx
+// Direct update - use when new value doesn't depend on old value
+setName('Alice');
+setIsOpen(true);
+
+// Functional update - use when new value depends on old value
+setCount(prev => prev + 1);
+setItems(prev => [...prev, newItem]);
+setUser(prev => ({ ...prev, name: 'Alice' }));
+```
+
+---
+
+## How React Processes Updates
+
+Here's what happens behind the scenes:
+
+```
+1. You call setCount(count + 1) three times
+   ↓
+2. React adds each update to a queue
+   ↓
+3. React processes the queue before re-rendering
+   ↓
+4. With direct values: later calls overwrite earlier ones
+   With functions: each function runs in sequence
+   ↓
+5. React re-renders with the final value
+```
+
+### Direct Updates vs Functional Updates
+
+**Direct updates** — React calculates the value immediately, then queues it:
+
+```jsx
+// If count is 0
+setCount(count + 1);  // Queue: set to 1
+setCount(count + 1);  // Queue: set to 1 (overwrites)
+// Final queue: [set to 1]
+// Result: 1
+```
+
+**Functional updates** — React queues the function itself:
+
+```jsx
+// If count is 0
+setCount(prev => prev + 1);  // Queue: function that adds 1
+setCount(prev => prev + 1);  // Queue: another function that adds 1
+// Final queue: [fn1, fn2]
+// Processing: fn1(0) = 1, fn2(1) = 2
+// Result: 2
+```
+
+---
+
+## State Batching
+
+React batches multiple state updates into a single re-render for performance:
+
+```jsx
+function handleClick() {
+  setCount(count + 1);
+  setFlag(!flag);
+  setName('React');
+  // All three updates → ONE re-render
+}
+```
+
+This happens automatically in:
+- Event handlers (onClick, onChange, etc.)
+- useEffect callbacks
+- Promise callbacks (React 18+)
+- setTimeout/setInterval callbacks (React 18+)
+
+---
+
+## Updating Objects and Arrays
+
+State updates must be **immutable** — never modify state directly.
+
+### Objects
+
+```jsx
+const [user, setUser] = useState({ name: 'Alice', age: 25 });
+
+// Wrong: Mutating state directly
+user.name = 'Bob';
+setUser(user);
+
+// Correct: Create a new object
+setUser({ ...user, name: 'Bob' });
+
+// Correct: Functional update
+setUser(prev => ({ ...prev, name: 'Bob' }));
+```
+
+### Arrays
+
+```jsx
+const [items, setItems] = useState(['a', 'b', 'c']);
+
+// Wrong: Mutating array
+items.push('d');
+setItems(items);
+
+// Correct: Add item
+setItems([...items, 'd']);
+
+// Correct: Remove item
+setItems(items.filter(item => item !== 'b'));
+
+// Correct: Update item
+setItems(items.map(item => 
+  item === 'a' ? 'A' : item
+));
+```
+
+---
+
+## State vs Props
+
+| Aspect | State | Props |
+|--------|-------|-------|
+| **Ownership** | Owned by the component | Passed from parent |
+| **Mutability** | Can be updated with setter | Read-only |
+| **Trigger re-render** | Yes | Yes (when parent re-renders) |
+| **Purpose** | Internal component data | External configuration |
+
+---
+
+## Quick Reference
+
+```jsx
+// Initialize state
+const [value, setValue] = useState(initialValue);
+
+// Update with direct value
+setValue(newValue);
+
+// Update based on previous value
+setValue(prev => prev + 1);
+
+// Update object
+setValue(prev => ({ ...prev, key: newValue }));
+
+// Update array (add)
+setValue(prev => [...prev, newItem]);
+
+// Update array (remove)
+setValue(prev => prev.filter(item => item.id !== id));
+
+// Update array (modify)
+setValue(prev => prev.map(item => 
+  item.id === id ? { ...item, updated: true } : item
+));
+```

@@ -1,0 +1,537 @@
+---
+title: Turborepo
+description: Build system for JavaScript and TypeScript monorepos with intelligent caching and task orchestration
+---
+
+## What is Turborepo?
+
+Turborepo is a high-performance build system for JavaScript and TypeScript monorepos. It intelligently schedules tasks, caches results, and parallelizes work to make your builds incredibly fast.
+
+In a monorepo, you might have dozens of packages that depend on each other. Running `npm run build` in every package manually would be slow and error-prone. Turborepo handles this automatically — it knows the dependency graph and runs tasks in the optimal order.
+
+---
+
+## Core Concepts
+
+Before diving into configuration, understand these fundamental terms:
+
+### Workspace
+
+A **workspace** is a single package within your monorepo. Each workspace has its own `package.json` and can be an app, library, or shared config.
+
+```
+my-monorepo/
+  apps/
+    web/               # Workspace: Next.js app
+    api/               # Workspace: Express server
+  packages/
+    ui/                # Workspace: Shared components
+    utils/             # Workspace: Helper functions
+    config/            # Workspace: Shared ESLint/TS configs
+  package.json         # Root package.json
+  turbo.json           # Turborepo configuration
+```
+
+### Task
+
+A **task** is a script defined in a workspace's `package.json`. Common tasks include:
+
+- `build` — Compile the code
+- `dev` — Start development server
+- `test` — Run tests
+- `lint` — Check code style
+
+### Pipeline
+
+The **pipeline** in `turbo.json` defines how tasks should run across your monorepo — their dependencies, caching behavior, and outputs.
+
+### Dependency Graph
+
+Turborepo automatically understands how your packages depend on each other by reading the `dependencies` and `devDependencies` in each `package.json`. This graph determines the order tasks run.
+
+---
+
+## Project Structure
+
+A typical Turborepo project looks like this:
+
+```
+monorepo/
+  apps/
+    web/
+      package.json       # name: "@repo/web"
+      src/
+    api/
+      package.json       # name: "@repo/api"
+      src/
+  packages/
+    ui/
+      package.json       # name: "@repo/ui"
+      src/
+    utils/
+      package.json       # name: "@repo/utils"
+      src/
+  package.json           # Root workspace config
+  turbo.json             # Turborepo pipeline config
+  pnpm-workspace.yaml    # (or npm/yarn workspaces)
+```
+
+### Root package.json
+
+```json
+{
+  "name": "monorepo",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0"
+  }
+}
+```
+
+The root scripts simply delegate to Turborepo, which then orchestrates the tasks across all workspaces.
+
+---
+
+## turbo.json Configuration
+
+The `turbo.json` file is where you define your pipeline — how tasks relate to each other and how they should be cached.
+
+### Basic Structure
+
+```json
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {},
+    "test": {
+      "dependsOn": ["build"]
+    }
+  }
+}
+```
+
+---
+
+## Task Dependencies with `dependsOn`
+
+The `dependsOn` array specifies which tasks must complete before a task can start. This is the heart of Turborepo's orchestration.
+
+### 1. Same Package Dependencies (No Prefix)
+
+Run other tasks in the **same package** first.
+
+```json
+{
+  "tasks": {
+    "build": {
+      "dependsOn": ["lint", "test"],
+      "outputs": ["dist/**"]
+    }
+  }
+}
+```
+
+**What happens when you run `turbo build` on a package:**
+
+1. First runs `lint` in that package
+2. Then runs `test` in that package
+3. Finally runs `build` in that package
+
+**Use case:** Ensure code passes linting and tests before building.
+
+### 2. Dependency Package Tasks (^ Prefix)
+
+Run tasks in **dependency packages** first, working from the bottom of the dependency tree upward.
+
+```json
+{
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    }
+  }
+}
+```
+
+Given this dependency structure:
+
+- `apps/web` depends on `packages/ui`
+- `packages/ui` depends on `packages/utils`
+
+**What happens when you run `turbo build` on `web`:**
+
+1. First builds `packages/utils` (no dependencies)
+2. Then builds `packages/ui` (depends on utils)
+3. Finally builds `apps/web` (depends on ui)
+
+**Use case:** Libraries must be built before the apps that consume them.
+
+### 3. Root Package Tasks (//# Prefix)
+
+Run a task at the **monorepo root** first.
+
+```json
+{
+  "tasks": {
+    "build": {
+      "dependsOn": ["//#generate-types"],
+      "outputs": ["dist/**"]
+    }
+  }
+}
+```
+
+This requires a `generate-types` script in your root `package.json`:
+
+```json
+{
+  "scripts": {
+    "generate-types": "graphql-codegen"
+  }
+}
+```
+
+**What happens when you run `turbo build` on any package:**
+
+1. First runs `generate-types` at the monorepo root
+2. Then runs `build` in the target package
+
+**Use case:** Global setup tasks like code generation, shared type compilation, or database migrations.
+
+### 4. Specific Package Tasks (package#task)
+
+Run a task from a **specific named package** first.
+
+```json
+{
+  "tasks": {
+    "dev": {
+      "dependsOn": ["@repo/db#generate"]
+    }
+  }
+}
+```
+
+**What happens:** Before starting `dev` in any package, first runs the `generate` script in the `@repo/db` package.
+
+**Use case:** Generate Prisma client or other package-specific prerequisites.
+
+---
+
+## Concurrent Tasks with `with`
+
+The `with` property is for **runtime dependencies** — tasks that should run simultaneously rather than sequentially.
+
+```json
+{
+  "tasks": {
+    "dev": {
+      "with": ["@repo/api#dev"],
+      "cache": false,
+      "persistent": true
+    }
+  }
+}
+```
+
+**Key difference from `dependsOn`:**
+- `dependsOn` — Waits for tasks to **complete** before starting
+- `with` — Starts tasks **together** without waiting
+
+**Use case:** When developing your frontend, you also need your backend API running:
+
+```json
+{
+  "tasks": {
+    "dev": {
+      "with": ["@repo/api#dev"],
+      "persistent": true,
+      "cache": false
+    }
+  }
+}
+```
+
+Now `turbo dev --filter=@repo/web` automatically starts both the web app and the API server.
+
+---
+
+## Task Properties Reference
+
+### outputs
+
+Specifies which files should be cached after the task runs.
+
+```json
+{
+  "tasks": {
+    "build": {
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+    }
+  }
+}
+```
+
+- `dist/**` — Cache everything in the dist folder
+- `!.next/cache/**` — Exclude Next.js cache from outputs
+
+### cache
+
+Controls whether the task result should be cached.
+
+```json
+{
+  "tasks": {
+    "dev": {
+      "cache": false
+    },
+    "build": {
+      "cache": true  // Default
+    }
+  }
+}
+```
+
+Set to `false` for tasks that should always run fresh (like dev servers).
+
+### persistent
+
+Marks a task as long-running (like dev servers or watchers).
+
+```json
+{
+  "tasks": {
+    "dev": {
+      "persistent": true,
+      "cache": false
+    }
+  }
+}
+```
+
+Persistent tasks:
+- Keep running until manually stopped
+- Don't block other tasks from completing
+- Are never cached
+
+### inputs
+
+Specifies which files should trigger cache invalidation.
+
+```json
+{
+  "tasks": {
+    "build": {
+      "inputs": ["src/**", "package.json", "tsconfig.json"],
+      "outputs": ["dist/**"]
+    }
+  }
+}
+```
+
+If only files outside `inputs` change, Turborepo can use the cached result.
+
+### env
+
+Environment variables that affect the task. Changes to these invalidate the cache.
+
+```json
+{
+  "tasks": {
+    "build": {
+      "env": ["NODE_ENV", "API_URL"],
+      "outputs": ["dist/**"]
+    }
+  }
+}
+```
+
+---
+
+## How Turborepo Executes Tasks
+
+When you run `npm run dev` (which calls `turbo run dev`):
+
+```
+1. npm run dev
+   └── Executes script in root package.json
+       └── turbo run dev
+
+2. Turborepo reads turbo.json
+   └── Finds "dev" task configuration
+
+3. Scans all workspace packages
+   └── Finds every package.json with a "dev" script
+
+4. Applies pipeline configuration
+   └── Sets persistent: true, cache: false, etc.
+
+5. Resolves dependencies
+   └── Checks dependsOn and with properties
+   └── Builds execution order
+
+6. Executes tasks
+   └── Runs in parallel where possible
+   └── Respects dependency order
+   └── Persistent tasks keep running
+```
+
+---
+
+## Complete turbo.json Example
+
+```json
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["**/.env.*local"],
+  "globalEnv": ["NODE_ENV"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "inputs": ["src/**", "test/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "clean": {
+      "cache": false
+    },
+    "//#generate": {
+      "outputs": ["generated/**"]
+    }
+  }
+}
+```
+
+---
+
+## Common Commands
+
+### Run a Task Across All Packages
+
+```bash
+turbo run build
+turbo run lint
+turbo run test
+```
+
+### Filter by Package
+
+```bash
+# Run only in specific package
+turbo run build --filter=@repo/web
+
+# Run in package and its dependencies
+turbo run build --filter=@repo/web...
+
+# Run in package and its dependents
+turbo run build --filter=...@repo/ui
+```
+
+### Filter by Directory
+
+```bash
+# All packages in apps/
+turbo run build --filter=./apps/*
+
+# All packages in packages/
+turbo run dev --filter=./packages/*
+```
+
+### Dry Run (See What Would Execute)
+
+```bash
+turbo run build --dry-run
+```
+
+### Force Fresh Run (Ignore Cache)
+
+```bash
+turbo run build --force
+```
+
+---
+
+## Caching
+
+Turborepo's killer feature is its intelligent caching. When you run a task:
+
+1. Turborepo hashes the inputs (source files, dependencies, env vars)
+2. If the hash matches a previous run, it restores the cached outputs
+3. If not, it runs the task and caches the new outputs
+
+### Cache Hit
+
+```
+@repo/ui:build: cache hit, replaying logs...
+@repo/ui:build: 
+@repo/ui:build: > @repo/ui@0.0.0 build
+@repo/ui:build: > tsup src/index.tsx
+@repo/ui:build: 
+@repo/ui:build: Build completed in 0.02s
+```
+
+The build finished in 0.02s because it simply restored the cached `dist/` folder.
+
+### Remote Caching
+
+Share the cache across your team and CI:
+
+```bash
+# Login to Vercel (Turborepo's creator)
+turbo login
+
+# Link your repo
+turbo link
+
+# Now cache is shared across all machines
+```
+
+---
+
+## Quick Reference
+
+| Property | Purpose | Example |
+|----------|---------|---------|
+| `dependsOn` | Tasks that must complete first | `["^build", "lint"]` |
+| `with` | Tasks that run concurrently | `["api#dev"]` |
+| `outputs` | Files to cache | `["dist/**"]` |
+| `inputs` | Files that affect cache | `["src/**"]` |
+| `cache` | Enable/disable caching | `false` |
+| `persistent` | Long-running task | `true` |
+| `env` | Env vars affecting cache | `["NODE_ENV"]` |
+
+| Prefix | Meaning | Example |
+|--------|---------|---------|
+| (none) | Same package | `"lint"` |
+| `^` | Dependency packages | `"^build"` |
+| `//#` | Root package | `"//#generate"` |
+| `pkg#` | Specific package | `"@repo/db#generate"` |

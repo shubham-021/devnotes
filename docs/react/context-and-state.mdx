@@ -1,0 +1,316 @@
+---
+title: Context & State Management
+description: React Context API, its limitations, and when to use state management libraries
+---
+
+## The Context API
+
+React Context provides a way to share values between components without passing props through every level of the tree.
+
+```jsx
+import { createContext, useContext, useState } from 'react';
+
+// Create context
+const ThemeContext = createContext();
+
+// Provider component
+function ThemeProvider({ children }) {
+  const [theme, setTheme] = useState('light');
+  
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+}
+
+// Consumer component
+function ThemedButton() {
+  const { theme, setTheme } = useContext(ThemeContext);
+  
+  return (
+    <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+      Current theme: {theme}
+    </button>
+  );
+}
+```
+
+---
+
+## The Re-render Problem
+
+Context has a significant performance issue: when the Provider value changes, **all consumers re-render**, even if they only use part of the value.
+
+### Example: Unnecessary Re-renders
+
+```jsx
+// AppContext.js
+export const AppContext = createContext();
+
+export function AppProvider({ children }) {
+  const [user, setUser] = useState({ name: "Shubham" });
+  const [theme, setTheme] = useState("light");
+
+  return (
+    <AppContext.Provider value={{ user, setUser, theme, setTheme }}>
+      {children}
+    </AppContext.Provider>
+  );
+}
+```
+
+```jsx
+// UserProfile.jsx - only uses 'user'
+function UserProfile() {
+  const { user } = useContext(AppContext);
+  console.log("UserProfile Rendered");
+  return <div>User: {user.name}</div>;
+}
+```
+
+```jsx
+// ThemeToggler.jsx - only uses 'theme'
+function ThemeToggler() {
+  const { theme, setTheme } = useContext(AppContext);
+  console.log("ThemeToggler Rendered");
+  return (
+    <button onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
+      Toggle Theme
+    </button>
+  );
+}
+```
+
+```jsx
+// App.jsx
+function App() {
+  return (
+    <AppProvider>
+      <UserProfile />
+      <ThemeToggler />
+    </AppProvider>
+  );
+}
+```
+
+### What Happens
+
+1. Click "Toggle Theme"
+2. `theme` state changes
+3. `AppProvider` re-renders
+4. Provider `value` object is recreated (new reference)
+5. **Both** `UserProfile` and `ThemeToggler` re-render
+6. `UserProfile` re-renders unnecessarily (it only uses `user`)
+
+### Why This Happens
+
+Two key concepts explain this behavior:
+
+**Reference Equality**: React compares the context value by reference. Even if the data inside is the same, a new object causes re-renders.
+
+```jsx
+// Every render creates a new object reference
+value={{ user, setUser, theme, setTheme }}  // New {} each time
+```
+
+**Value Identity**: The Provider value is a single object. When any part changes, the whole object is considered changed.
+
+---
+
+## Solutions
+
+### Solution 1: Split Contexts
+
+Create separate contexts for unrelated state:
+
+```jsx
+// Separate contexts
+const UserContext = createContext();
+const ThemeContext = createContext();
+
+function AppProvider({ children }) {
+  const [user, setUser] = useState({ name: "Shubham" });
+  const [theme, setTheme] = useState("light");
+
+  return (
+    <UserContext.Provider value={{ user, setUser }}>
+      <ThemeContext.Provider value={{ theme, setTheme }}>
+        {children}
+      </ThemeContext.Provider>
+    </UserContext.Provider>
+  );
+}
+```
+
+```jsx
+// UserProfile only subscribes to UserContext
+function UserProfile() {
+  const { user } = useContext(UserContext);
+  return <div>User: {user.name}</div>;
+}
+
+// ThemeToggler only subscribes to ThemeContext
+function ThemeToggler() {
+  const { theme, setTheme } = useContext(ThemeContext);
+  return <button onClick={() => setTheme(/*...*/)}>Toggle</button>;
+}
+```
+
+Now `UserProfile` only re-renders when `user` changes, not `theme`.
+
+### Solution 2: Memoize the Value
+
+Reduce unnecessary re-renders by memoizing the context value:
+
+```jsx
+function AppProvider({ children }) {
+  const [user, setUser] = useState({ name: "Shubham" });
+  const [theme, setTheme] = useState("light");
+
+  const value = useMemo(
+    () => ({ user, setUser, theme, setTheme }),
+    [user, theme]
+  );
+
+  return (
+    <AppContext.Provider value={value}>
+      {children}
+    </AppContext.Provider>
+  );
+}
+```
+
+This helps with parent re-renders but doesn't solve the fundamental issue: all consumers still re-render when any part of the value changes.
+
+### Solution 3: Use State Management Libraries
+
+For complex state needs, dedicated libraries offer better performance:
+
+| Library | Approach | Key Feature |
+|---------|----------|-------------|
+| **Zustand** | Store-based | Selective subscriptions |
+| **Jotai** | Atomic | Fine-grained updates |
+| **Recoil** | Atomic | Facebook-backed, selectors |
+| **Redux** | Flux pattern | Middleware, devtools |
+
+---
+
+## Recoil Basics
+
+Recoil is a state management library designed specifically for React.
+
+### Core Concepts
+
+**Atoms**: Basic units of state that components can subscribe to.
+
+```jsx
+import { atom, useRecoilState } from 'recoil';
+
+// Define an atom
+const counterState = atom({
+  key: 'counterState',  // Unique ID
+  default: 0            // Default value
+});
+
+// Use in a component
+function Counter() {
+  const [count, setCount] = useRecoilState(counterState);
+  
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>Increment</button>
+    </div>
+  );
+}
+```
+
+### Setup
+
+```jsx
+import { RecoilRoot } from 'recoil';
+
+function App() {
+  return (
+    <RecoilRoot>
+      <Counter />
+    </RecoilRoot>
+  );
+}
+```
+
+### Recoil Hooks
+
+| Hook | Purpose |
+|------|---------|
+| `useRecoilState` | Read and write (like useState) |
+| `useRecoilValue` | Read only |
+| `useSetRecoilState` | Write only (no re-render on read) |
+
+```jsx
+// Read and write
+const [count, setCount] = useRecoilState(counterState);
+
+// Read only
+const count = useRecoilValue(counterState);
+
+// Write only (component doesn't re-render when value changes)
+const setCount = useSetRecoilState(counterState);
+```
+
+### Selectors
+
+Derived state that updates when dependencies change:
+
+```jsx
+import { selector, useRecoilValue } from 'recoil';
+
+const doubledCountState = selector({
+  key: 'doubledCount',
+  get: ({ get }) => {
+    const count = get(counterState);
+    return count * 2;
+  },
+});
+
+function DoubledCounter() {
+  const doubled = useRecoilValue(doubledCountState);
+  return <p>Doubled: {doubled}</p>;
+}
+```
+
+---
+
+## When to Use What
+
+| Scenario | Solution |
+|----------|----------|
+| Theme, locale, auth | Context API (split contexts) |
+| Form state | Local state (useState) |
+| Shared UI state | Zustand or Jotai |
+| Complex app state | Recoil or Redux |
+| Server state | React Query or SWR |
+
+### Context API Best Practices
+
+- Use for **low-frequency** updates (theme, auth, locale)
+- **Split contexts** by domain
+- **Memoize values** with useMemo
+- Don't use for **frequently updating** state
+
+---
+
+## Summary
+
+The Context API re-render issue in one statement:
+
+> When a Provider's value changes, all consuming components re-render, even if they only use a part of the value that didn't change.
+
+**Solutions**:
+1. Split contexts by domain
+2. Memoize context values
+3. Use state management libraries for complex/frequent updates
+4. Use `React.memo` on child components
+
+State management libraries don't just simplify code — they provide fine-grained subscriptions that the Context API cannot offer.

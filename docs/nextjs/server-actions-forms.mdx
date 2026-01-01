@@ -1,0 +1,460 @@
+---
+title: Server Actions with Forms
+description: Integrating React Hook Form with Next.js Server Actions for type-safe form handling
+---
+
+## Overview
+
+Server Actions are async functions that run on the server. When combined with React Hook Form, you get client-side validation with server-side processing in a type-safe workflow.
+
+### Installation
+
+```bash
+npm install react-hook-form @hookform/resolvers zod
+```
+
+---
+
+## The Architecture
+
+A typical Server Action form has three parts:
+
+1. **Schema**: Shared validation rules (used by client and server)
+2. **Server Action**: Server-side function that processes the data
+3. **Client Component**: Form UI with React Hook Form
+
+This separation ensures validation logic is consistent and types flow through the entire stack.
+
+---
+
+## Defining the Schema
+
+Create a schema file that both client and server can import:
+
+```tsx
+// schema.ts
+import { z } from 'zod';
+
+export const registerSchema = z.object({
+  username: z.string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(20, 'Username cannot exceed 20 characters'),
+  email: z.string()
+    .email('Invalid email address'),
+  password: z.string()
+    .min(8, 'Password must be at least 8 characters')
+});
+
+// Infer TypeScript type from schema
+export type RegisterFormData = z.infer<typeof registerSchema>;
+```
+
+The schema serves multiple purposes:
+
+| Purpose | Location |
+|---------|----------|
+| Client-side validation | React Hook Form with zodResolver |
+| Server-side validation | Server Action re-validates for security |
+| Type inference | TypeScript types for form data |
+
+---
+
+## Creating the Server Action
+
+Server Actions are marked with `'use server'` and run exclusively on the server.
+
+```tsx
+// actions.ts
+'use server'
+
+import { registerSchema, RegisterFormData } from './schema';
+
+type ActionResult = {
+  success: boolean;
+  message: string;
+};
+
+export async function registerUser(data: RegisterFormData): Promise<ActionResult> {
+  // 1. Re-validate on server (never trust client data)
+  const parsed = registerSchema.safeParse(data);
+  
+  if (!parsed.success) {
+    return { 
+      success: false, 
+      message: 'Invalid data' 
+    };
+  }
+
+  // 2. Server-side checks (database queries, etc.)
+  const existingUser = await db.user.findUnique({
+    where: { email: data.email }
+  });
+
+  if (existingUser) {
+    return { 
+      success: false, 
+      message: 'This email is already registered' 
+    };
+  }
+
+  // 3. Perform the action
+  await db.user.create({
+    data: {
+      username: data.username,
+      email: data.email,
+      password: await hash(data.password)
+    }
+  });
+
+  return { 
+    success: true, 
+    message: 'Account created successfully' 
+  };
+}
+```
+
+### Why Re-validate on the Server?
+
+Client-side validation can be bypassed. A malicious user can:
+
+- Disable JavaScript
+- Modify the request in browser dev tools
+- Call your Server Action directly with invalid data
+
+Always validate on the server, even if the client already validated.
+
+---
+
+## Building the Form Component
+
+The client component connects React Hook Form to the Server Action.
+
+```tsx
+// RegisterForm.tsx
+'use client'
+
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { registerSchema, RegisterFormData } from './schema';
+import { registerUser } from './actions';
+
+export default function RegisterForm() {
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors, isSubmitting }
+  } = useForm<RegisterFormData>({
+    resolver: zodResolver(registerSchema)
+  });
+
+  const onSubmit = async (data: RegisterFormData) => {
+    // Call the Server Action
+    const result = await registerUser(data);
+
+    if (!result.success) {
+      // Map server errors to form fields
+      setError('email', {
+        type: 'server',
+        message: result.message
+      });
+      return;
+    }
+
+    // Handle success
+    alert(result.message);
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <div>
+        <label>Username</label>
+        <input {...register('username')} />
+        {errors.username && <p>{errors.username.message}</p>}
+      </div>
+
+      <div>
+        <label>Email</label>
+        <input {...register('email')} />
+        {errors.email && <p>{errors.email.message}</p>}
+      </div>
+
+      <div>
+        <label>Password</label>
+        <input type="password" {...register('password')} />
+        {errors.password && <p>{errors.password.message}</p>}
+      </div>
+
+      <button disabled={isSubmitting} type="submit">
+        {isSubmitting ? 'Creating account...' : 'Register'}
+      </button>
+    </form>
+  );
+}
+```
+
+---
+
+## Handling Server Errors
+
+Server Actions can return errors that the client-side validation cannot catch:
+
+- Email already registered
+- Username taken
+- Rate limiting
+- Database failures
+
+### Field-Specific Errors
+
+Use `setError` to attach server errors to specific fields:
+
+```tsx
+const onSubmit = async (data: RegisterFormData) => {
+  const result = await registerUser(data);
+
+  if (!result.success) {
+    // Attach error to the email field
+    setError('email', {
+      type: 'server',
+      message: result.message
+    });
+    return;
+  }
+};
+```
+
+### General Errors
+
+For errors not tied to a specific field, use the root error:
+
+```tsx
+setError('root', {
+  type: 'server',
+  message: 'Something went wrong. Please try again.'
+});
+
+// Display in the form
+{errors.root && (
+  <div className="error-banner">
+    {errors.root.message}
+  </div>
+)}
+```
+
+---
+
+## Returning Field-Specific Errors from Server
+
+For more granular error handling, return which field caused the error:
+
+```tsx
+// actions.ts
+'use server'
+
+type ActionResult = {
+  success: boolean;
+  message: string;
+  field?: 'username' | 'email' | 'password';
+};
+
+export async function registerUser(data: RegisterFormData): Promise<ActionResult> {
+  // Check username
+  const existingUsername = await db.user.findUnique({
+    where: { username: data.username }
+  });
+
+  if (existingUsername) {
+    return { 
+      success: false, 
+      message: 'Username is already taken',
+      field: 'username'
+    };
+  }
+
+  // Check email
+  const existingEmail = await db.user.findUnique({
+    where: { email: data.email }
+  });
+
+  if (existingEmail) {
+    return { 
+      success: false, 
+      message: 'Email is already registered',
+      field: 'email'
+    };
+  }
+
+  // ... create user
+}
+```
+
+```tsx
+// RegisterForm.tsx
+const onSubmit = async (data: RegisterFormData) => {
+  const result = await registerUser(data);
+
+  if (!result.success && result.field) {
+    setError(result.field, {
+      type: 'server',
+      message: result.message
+    });
+    return;
+  }
+
+  if (!result.success) {
+    setError('root', {
+      type: 'server',
+      message: result.message
+    });
+    return;
+  }
+
+  // Success
+};
+```
+
+---
+
+## Complete Example
+
+### Schema
+
+```tsx
+// schema.ts
+import { z } from 'zod';
+
+export const registerSchema = z.object({
+  username: z.string().min(3, 'Username must be at least 3 characters'),
+  email: z.string().email('Invalid email address')
+});
+
+export type RegisterFormData = z.infer<typeof registerSchema>;
+```
+
+### Server Action
+
+```tsx
+// actions.ts
+'use server'
+
+import { registerSchema, RegisterFormData } from './schema';
+
+export async function registerUser(data: RegisterFormData) {
+  const parsed = registerSchema.safeParse(data);
+  
+  if (!parsed.success) {
+    return { success: false, message: 'Invalid data' };
+  }
+
+  if (data.email === 'admin@example.com') {
+    return { success: false, message: 'This email is already taken' };
+  }
+
+  console.log('Saved to DB:', data);
+  return { success: true, message: 'User created!' };
+}
+```
+
+### Form Component
+
+```tsx
+// RegisterForm.tsx
+'use client'
+
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { registerSchema, RegisterFormData } from './schema';
+import { registerUser } from './actions';
+
+export default function RegisterForm() {
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors, isSubmitting }
+  } = useForm<RegisterFormData>({
+    resolver: zodResolver(registerSchema)
+  });
+
+  const onSubmit = async (data: RegisterFormData) => {
+    const result = await registerUser(data);
+
+    if (!result.success) {
+      setError('email', { 
+        type: 'server', 
+        message: result.message 
+      });
+      return;
+    }
+
+    alert('Success! ' + result.message);
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <div>
+        <label>Username</label>
+        <input {...register('username')} />
+        {errors.username && <p>{errors.username.message}</p>}
+      </div>
+
+      <div>
+        <label>Email</label>
+        <input {...register('email')} />
+        {errors.email && <p>{errors.email.message}</p>}
+      </div>
+
+      <button disabled={isSubmitting} type="submit">
+        {isSubmitting ? 'Registering...' : 'Sign Up'}
+      </button>
+    </form>
+  );
+}
+```
+
+---
+
+## Quick Reference
+
+### File Structure
+
+```
+app/
+  register/
+    schema.ts       # Shared Zod schema
+    actions.ts      # Server Action
+    page.tsx        # Form component
+```
+
+### Schema Pattern
+
+```tsx
+export const schema = z.object({ /* fields */ });
+export type FormData = z.infer<typeof schema>;
+```
+
+### Server Action Pattern
+
+```tsx
+'use server'
+
+export async function action(data: FormData) {
+  const parsed = schema.safeParse(data);
+  if (!parsed.success) return { success: false };
+  // ... process
+  return { success: true };
+}
+```
+
+### Form Pattern
+
+```tsx
+'use client'
+
+const { setError } = useForm({ resolver: zodResolver(schema) });
+
+const onSubmit = async (data) => {
+  const result = await serverAction(data);
+  if (!result.success) setError('field', { message: result.message });
+};
+```

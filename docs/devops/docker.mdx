@@ -1,0 +1,429 @@
+---
+title: Docker
+description: Essential Docker commands and concepts for containerizing applications
+---
+
+## What is Docker?
+
+Docker is a platform that lets you package applications and their dependencies into lightweight, portable **containers**. Think of a container as a small, isolated box that contains everything your app needs to run — code, runtime, libraries, and settings.
+
+---
+
+## Basic Commands
+
+### Check Your Installation
+
+```bash
+docker -v
+```
+
+Displays the installed Docker version.
+
+### List Running Containers
+
+```bash
+docker ps
+```
+
+Shows all currently running containers. Add `-a` to see all containers (including stopped ones):
+
+```bash
+docker ps -a
+```
+
+---
+
+## Working with Images
+
+An **image** is a blueprint for creating containers. It's read-only and contains everything needed to run an application.
+
+### Pull an Image
+
+```bash
+docker pull <image_name>
+```
+
+Downloads an image from Docker Hub (or another registry) to your local machine.
+
+```bash
+docker pull nginx
+docker pull mongo:latest
+docker pull node:18-alpine
+```
+
+### List Local Images
+
+```bash
+docker images
+```
+
+Shows all images stored on your machine.
+
+### Remove an Image
+
+```bash
+docker rmi <image_name>
+```
+
+Deletes an image from your local machine. If a container is using it, you'll need to force it:
+
+```bash
+docker rmi <image_name> --force
+```
+
+---
+
+## Running Containers
+
+### Basic Run
+
+```bash
+docker run <image_name>
+```
+
+Creates and starts a new container from an image. If the image isn't available locally, Docker will pull it first.
+
+### Interactive Mode
+
+```bash
+docker run -it <image_name>
+```
+
+The `-it` flags give you an interactive terminal inside the container:
+- `-i` keeps STDIN open (interactive)
+- `-t` allocates a pseudo-TTY (terminal)
+
+```bash
+docker run -it ubuntu bash
+```
+
+### Detached Mode
+
+```bash
+docker run -d <image_name>
+```
+
+Runs the container in the background, freeing up your terminal.
+
+---
+
+## Container Lifecycle
+
+### Start a Stopped Container
+
+```bash
+docker start <container_name>
+```
+
+Restarts a container that was previously stopped. Unlike `docker run`, this doesn't create a new container.
+
+### Stop a Container
+
+```bash
+docker stop <container_name>
+```
+
+Gracefully stops a running container:
+
+1. Sends a `SIGTERM` signal, giving the process time to clean up (save data, close connections)
+2. Waits 10 seconds (default timeout)
+3. If still running, sends `SIGKILL` to force termination
+
+**Use this when** you want the application to shut down cleanly.
+
+### Kill a Container
+
+```bash
+docker kill <container_id>
+```
+
+Immediately terminates a container by sending `SIGKILL` — no cleanup, instant stop.
+
+**Use this only when** the container is unresponsive or you need an immediate stop.
+
+### Stop vs Kill
+
+| Command | Signal | Cleanup Time | Use Case |
+|---------|--------|--------------|----------|
+| `docker stop` | SIGTERM → SIGKILL | 10 seconds | Normal shutdown |
+| `docker kill` | SIGKILL | None | Unresponsive containers |
+
+---
+
+## Port Mapping
+
+Containers are isolated by default. To access services running inside, you need to map container ports to your host machine.
+
+```bash
+docker run -p <host_port>:<container_port> <image_name>
+```
+
+### Example: Running MongoDB
+
+```bash
+docker run -d -p 27018:27017 mongo
+```
+
+This maps:
+- **27017** — the port MongoDB uses *inside* the container
+- **27018** — the port on *your machine* to access it
+
+Now you can connect to MongoDB at `localhost:27018`.
+
+### Multiple Port Mappings
+
+```bash
+docker run -p 3000:3000 -p 9229:9229 node-app
+```
+
+---
+
+## Environment Variables
+
+Inject configuration into containers using the `-e` flag:
+
+```bash
+docker run -e "DATABASE_URL=postgres://..." my_app
+```
+
+### Multiple Variables
+
+```bash
+docker run -d \
+  -e "NODE_ENV=production" \
+  -e "PORT=3000" \
+  -e "API_KEY=secret123" \
+  -p 3000:3000 \
+  my_app
+```
+
+---
+
+## Executing Commands in Containers
+
+### Interactive Shell
+
+```bash
+docker exec -it <container_name> /bin/bash
+```
+
+Opens a bash shell inside a running container. Use `/bin/sh` for Alpine-based images:
+
+```bash
+docker exec -it my_container /bin/sh
+```
+
+### Run a Single Command
+
+```bash
+docker exec <container_name> ls /path/to/directory
+```
+
+Executes a command without entering the container.
+
+---
+
+## Docker Volumes
+
+Volumes provide **persistent storage** that survives container restarts and removals. Without volumes, all data inside a container is lost when the container is deleted.
+
+### Create a Volume
+
+```bash
+docker volume create <volume_name>
+```
+
+### Mount a Volume
+
+```bash
+docker run -v <volume_name>:<container_path> <image_name>
+```
+
+The syntax is: `volume_name:path_inside_container`
+
+```bash
+docker run -v my_data:/app/data my_image
+```
+
+This mounts the volume `my_data` to `/app/data` inside the container. Docker creates the volume automatically if it doesn't exist.
+
+### Example: MongoDB with Persistent Data
+
+```bash
+docker run -d \
+  -v mongo_data:/data/db \
+  -p 27017:27017 \
+  mongo
+```
+
+MongoDB stores its data at `/data/db` inside the container. By mounting a volume there, your data persists even if you delete and recreate the container.
+
+### Know Your Data Paths
+
+Every application stores data in different locations. You must know where your image writes data to persist it correctly:
+
+| Image | Data Path | What's Stored |
+|-------|-----------|---------------|
+| `mongo` | `/data/db` | Database files |
+| `postgres` | `/var/lib/postgresql/data` | Database files |
+| `mysql` | `/var/lib/mysql` | Database files |
+| `nginx` | `/usr/share/nginx/html` | Static files |
+| `redis` | `/data` | RDB/AOF files |
+
+Check the image's documentation on Docker Hub to find the correct paths.
+
+### Bind Mounts (Development)
+
+For development, you can mount a local directory directly into the container:
+
+```bash
+docker run -v ./app:/workdir/app -p 3000:3000 my_image
+```
+
+This syncs your local `./app` folder with `/workdir/app` in the container — perfect for live reloading during development.
+
+---
+
+## Docker Networks
+
+Networks allow containers to communicate with each other. By default, containers are isolated and can't reach other containers.
+
+### Create a Network
+
+```bash
+docker network create my_custom_network
+```
+
+### Connect Containers to a Network
+
+```bash
+docker run -d \
+  --name mongo \
+  --network my_custom_network \
+  -v mongo_data:/data/db \
+  -p 27017:27017 \
+  mongo
+```
+
+Now any container on `my_custom_network` can reach this MongoDB instance using the hostname `mongo` (the container name).
+
+### Example: App + Database
+
+```bash
+# Create a shared network
+docker network create app_network
+
+# Run MongoDB
+docker run -d \
+  --name mongo \
+  --network app_network \
+  -v mongo_data:/data/db \
+  mongo
+
+# Run your app (can connect to "mongo:27017")
+docker run -d \
+  --name my_app \
+  --network app_network \
+  -e "MONGO_URL=mongodb://mongo:27017" \
+  -p 3000:3000 \
+  my_app_image
+```
+
+---
+
+## Building Images
+
+Create your own images from a `Dockerfile`:
+
+```bash
+docker build -t <image_name>:<tag> .
+```
+
+The `.` tells Docker to use the current directory as the build context.
+
+```bash
+docker build -t my_app:1.0 .
+docker build -t my_app:latest .
+```
+
+---
+
+## Docker Compose
+
+Docker Compose lets you define multi-container applications in a single YAML file.
+
+### Example: App with MongoDB
+
+```yaml
+version: '3.9'
+
+services:
+  app:
+    image: my_app
+    ports:
+      - "3000:3000"
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+    depends_on:
+      - mongo
+    volumes:
+      - ./app:/workdir/app
+
+  mongo:
+    image: mongo
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+
+volumes:
+  mongo_data:
+```
+
+### Key Concepts
+
+- **services** — Each container in your application
+- **volumes** — Declared at the bottom, Docker manages them
+- **depends_on** — Ensures `mongo` starts before `app`
+- **networks** — Compose creates a default network; all services can reach each other by service name
+
+### Running Compose
+
+```bash
+# Start all services
+docker compose up
+
+# Start in detached mode
+docker compose up -d
+
+# Stop all services
+docker compose down
+
+# Stop and remove volumes
+docker compose down -v
+```
+
+---
+
+## Quick Reference
+
+| Command | Purpose |
+|---------|---------|
+| `docker ps` | List running containers |
+| `docker ps -a` | List all containers |
+| `docker images` | List local images |
+| `docker pull <image>` | Download an image |
+| `docker run <image>` | Create and start a container |
+| `docker run -d` | Run in detached mode |
+| `docker run -it` | Run with interactive terminal |
+| `docker run -p` | Map ports |
+| `docker run -v` | Mount volumes |
+| `docker run -e` | Set environment variables |
+| `docker start <container>` | Start a stopped container |
+| `docker stop <container>` | Gracefully stop a container |
+| `docker kill <container>` | Force stop a container |
+| `docker exec -it <container> /bin/bash` | Open shell in container |
+| `docker build -t <name> .` | Build an image |
+| `docker rmi <image>` | Remove an image |
+| `docker volume create` | Create a volume |
+| `docker network create` | Create a network |

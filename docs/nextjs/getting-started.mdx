@@ -1,0 +1,63 @@
+---
+title: Getting Started
+description: Why Next.js exists and what it offers over plain React
+---
+
+## Why Next.js?
+
+Next.js was created to solve several pain points in React development:
+
+| Problem | In React | In Next.js |
+|---------|----------|------------|
+| **API Routes** | Separate backend project | Built-in API routes |
+| **Routing** | Requires `react-router-dom` | File-based routing |
+| **SEO** | Client-rendered, poor SEO | Server-rendered, SEO-friendly |
+| **Data Fetching** | Waterfall requests on client | Server-side data fetching |
+
+---
+
+## What Next.js Offers
+
+### Advantages
+
+1. **Server-Side Rendering** — HTML is generated on the server, solving SEO issues
+2. **API Routes** — Full-stack in a single codebase (frontend + backend)
+3. **File-Based Routing** — No router configuration needed
+4. **Performance Optimizations** — Automatic code splitting, image optimization, static generation
+5. **Vercel Support** — Maintained by Vercel with excellent deployment integration
+
+### Trade-offs
+
+1. **Requires a Server** — Can't be deployed as static files to a CDN (unless using static export). Server-side rendering needs compute resources
+2. **Opinionated** — Strong conventions make it harder to migrate away from Next.js
+
+---
+
+## Creating a Project
+
+```bash
+npx create-next-app@latest
+```
+
+This interactive CLI will ask you about:
+- TypeScript support
+- ESLint configuration
+- Tailwind CSS
+- App Router vs Pages Router
+- Import aliases
+
+---
+
+## File-Based Routing
+
+Next.js uses the filesystem to define routes. The structure of your `app` directory directly maps to URL paths:
+
+| File Path | URL Route |
+|-----------|-----------|
+| `app/page.tsx` | `/` |
+| `app/about/page.tsx` | `/about` |
+| `app/blog/page.tsx` | `/blog` |
+| `app/blog/[slug]/page.tsx` | `/blog/:slug` (dynamic) |
+| `app/api/users/route.ts` | `/api/users` |
+
+Every `page.tsx` file becomes a route. Dynamic segments use `[brackets]`.

@@ -1,0 +1,402 @@
+---
+title: Routing
+description: React Router DOM fundamentals, navigation components, and lazy loading for performance
+---
+
+## Single Page Applications
+
+Traditional websites built with HTML, CSS, and JavaScript make a new HTTP request to the server for every page navigation. The browser reloads the entire page each time.
+
+React applications work differently. They are **Single Page Applications (SPAs)**:
+
+1. The browser loads a single `index.html` at the start
+2. All components are bundled into JavaScript modules
+3. Navigation updates the URL without a full page reload
+4. React renders the appropriate component based on the route
+5. Data is fetched via API calls when needed
+
+### Why No Page Reload?
+
+React uses the browser's **History API** (`pushState`, `replaceState`) to change the URL. React Router intercepts navigation clicks and renders the appropriate component without requesting a new HTML file from the server.
+
+| Traditional Website | React SPA |
+|---------------------|-----------|
+| Server sends new HTML for each page | Single HTML file, components swap in/out |
+| Full page reload on navigation | No reload, URL changes via History API |
+| Each page is a separate request | Initial bundle loads once |
+
+---
+
+## React Router DOM
+
+React Router DOM is the standard routing library for React. It enables navigation between components while keeping the URL in sync with what's displayed.
+
+### Installation
+
+```bash
+npm install react-router-dom
+```
+
+### Core Components
+
+**BrowserRouter**: The top-level wrapper that enables routing. It uses the browser's History API to keep the UI in sync with the URL.
+
+```jsx
+import { BrowserRouter } from 'react-router-dom';
+
+function App() {
+  return (
+    <BrowserRouter>
+      {/* Your app components */}
+    </BrowserRouter>
+  );
+}
+```
+
+**Routes and Route**: Define which component renders for each path.
+
+```jsx
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+```
+
+The `path="*"` route acts as a catch-all for undefined routes, typically used for 404 pages.
+
+---
+
+## Navigation Components
+
+### Link
+
+The `Link` component creates navigation without page reloads. Use it instead of `<a>` tags for internal navigation.
+
+```jsx
+import { Link } from 'react-router-dom';
+
+function Navigation() {
+  return (
+    <nav>
+      <Link to="/">Home</Link>
+      <Link to="/about">About</Link>
+      <Link to="/dashboard">Dashboard</Link>
+    </nav>
+  );
+}
+```
+
+### NavLink
+
+`NavLink` is a special version of `Link` that knows whether it matches the current URL. It automatically applies an `active` class when the link is active.
+
+```jsx
+import { NavLink } from 'react-router-dom';
+
+function Navigation() {
+  return (
+    <nav>
+      <NavLink to="/">Home</NavLink>
+      <NavLink to="/about">About</NavLink>
+      <NavLink to="/dashboard">Dashboard</NavLink>
+    </nav>
+  );
+}
+```
+
+You can style the active state:
+
+```css
+nav a.active {
+  color: blue;
+  font-weight: bold;
+}
+```
+
+Or use a function to apply custom classes:
+
+```jsx
+<NavLink
+  to="/about"
+  className={({ isActive }) => isActive ? "active-link" : ""}
+>
+  About
+</NavLink>
+```
+
+### Link vs NavLink
+
+| Feature | Link | NavLink |
+|---------|------|---------|
+| Basic navigation | Yes | Yes |
+| Active state detection | No | Yes |
+| Automatic `active` class | No | Yes |
+| Use case | Generic links | Navigation menus |
+
+---
+
+## Programmatic Navigation
+
+### useNavigate
+
+The `useNavigate` hook allows navigation from event handlers and effects, not just JSX.
+
+```jsx
+import { useNavigate } from 'react-router-dom';
+
+function LoginForm() {
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const success = await login(credentials);
+    
+    if (success) {
+      navigate('/dashboard');
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      {/* form fields */}
+    </form>
+  );
+}
+```
+
+Common navigation patterns:
+
+```jsx
+const navigate = useNavigate();
+
+// Navigate to a path
+navigate('/about');
+
+// Navigate with replace (no back button entry)
+navigate('/login', { replace: true });
+
+// Go back
+navigate(-1);
+
+// Go forward
+navigate(1);
+```
+
+---
+
+## Persistent Layouts
+
+To display a constant element (like a navbar) on all pages, place it outside the `Routes` component but inside `BrowserRouter`.
+
+```jsx
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Navbar />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+      </Routes>
+      <Footer />
+    </BrowserRouter>
+  );
+}
+```
+
+The `Navbar` and `Footer` components render on every page. Only the content inside `Routes` changes based on the URL.
+
+### Using Outlet for Nested Layouts
+
+For more complex layouts, use `Outlet` to render child routes:
+
+```jsx
+import { Outlet } from 'react-router-dom';
+
+function Layout() {
+  return (
+    <div>
+      <Navbar />
+      <main>
+        <Outlet />
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Layout />}>
+          <Route index element={<Home />} />
+          <Route path="about" element={<About />} />
+          <Route path="dashboard" element={<Dashboard />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+}
+```
+
+The `Outlet` component acts as a placeholder where child routes render.
+
+---
+
+## Lazy Loading
+
+Lazy loading defers loading parts of your application until they're needed. Instead of loading every component upfront, components load only when the user navigates to them.
+
+### Benefits
+
+| Benefit | Impact |
+|---------|--------|
+| Faster initial load | Smaller initial bundle size |
+| Bandwidth savings | Users download only what they need |
+| Improved performance | Quicker time-to-interactive |
+
+### React.lazy and Suspense
+
+React provides two features for lazy loading:
+
+- **React.lazy()**: Renders a dynamic import as a regular component
+- **Suspense**: Displays a fallback UI while the component loads
+
+```jsx
+import { lazy, Suspense } from 'react';
+
+// Regular import (loads immediately)
+// import Dashboard from './Dashboard';
+
+// Lazy import (loads when rendered)
+const Dashboard = lazy(() => import('./Dashboard'));
+
+function App() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <Dashboard />
+    </Suspense>
+  );
+}
+```
+
+### Why Suspense is Required
+
+`React.lazy()` returns a promise-based component. When React tries to render it, the component isn't ready yet. React throws a promise internally, which `Suspense` catches to display the fallback.
+
+Without `Suspense`, React crashes with:
+
+```
+A React component suspended while rendering, but no fallback UI was specified.
+```
+
+### Lazy Loading with Routes
+
+The most common pattern is lazy loading route components:
+
+```jsx
+import { lazy, Suspense } from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+
+const Home = lazy(() => import('./pages/Home'));
+const About = lazy(() => import('./pages/About'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Navbar />
+      <Suspense fallback={<LoadingSpinner />}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
+    </BrowserRouter>
+  );
+}
+```
+
+Wrap `Routes` (or individual route elements) with `Suspense`. The `Navbar` stays visible while route components load.
+
+### Custom Loading Components
+
+Replace the simple fallback with a proper loading component:
+
+```jsx
+function LoadingSpinner() {
+  return (
+    <div className="loading-container">
+      <div className="spinner"></div>
+      <p>Loading...</p>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <Dashboard />
+    </Suspense>
+  );
+}
+```
+
+---
+
+## Quick Reference
+
+### Router Setup
+
+```jsx
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+
+<BrowserRouter>
+  <Routes>
+    <Route path="/" element={<Home />} />
+    <Route path="/about" element={<About />} />
+    <Route path="*" element={<NotFound />} />
+  </Routes>
+</BrowserRouter>
+```
+
+### Navigation
+
+```jsx
+// Declarative (in JSX)
+<Link to="/about">About</Link>
+<NavLink to="/about">About</NavLink>
+
+// Programmatic (in handlers)
+const navigate = useNavigate();
+navigate('/dashboard');
+navigate(-1); // back
+```
+
+### Lazy Loading
+
+```jsx
+import { lazy, Suspense } from 'react';
+
+const Component = lazy(() => import('./Component'));
+
+<Suspense fallback={<Loading />}>
+  <Component />
+</Suspense>
+```

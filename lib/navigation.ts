@@ -73,8 +73,61 @@ export const navigation: NavSection[] = [
             { title: "Classes", slug: "typescript/classes" },
             { title: "Generics", slug: "typescript/generics" },
             { title: "Utility Types", slug: "typescript/utility-types" },
+            { title: "Advanced Types", slug: "typescript/advanced-types" },
             { title: "Records & Maps", slug: "typescript/records-and-maps" },
             { title: "Zod & Validation", slug: "typescript/zod-and-validation" },
+        ],
+    },
+    {
+        title: "DevOps",
+        items: [
+            { title: "Git & GitHub", slug: "devops/git" },
+            { title: "Docker", slug: "devops/docker" },
+            { title: "CI/CD Pipelines", slug: "devops/ci-cd" },
+        ],
+    },
+    {
+        title: "DSA with C++",
+        items: [
+            { title: "Getting Started", slug: "dsa-cpp/getting-started" },
+            { title: "STL Containers", slug: "dsa-cpp/stl-containers" },
+            { title: "Associative Containers", slug: "dsa-cpp/stl-associative" },
+            { title: "STL Algorithms", slug: "dsa-cpp/stl-algorithms" },
+            { title: "Sorting Algorithms", slug: "dsa-cpp/sorting-algorithms" },
+            { title: "Classic Algorithms", slug: "dsa-cpp/classic-algorithms" },
+            { title: "Problem Solving", slug: "dsa-cpp/problem-solving" },
+        ],
+    },
+    {
+        title: "Monorepo",
+        items: [
+            { title: "Getting Started", slug: "monorepo/getting-started" },
+            { title: "Turborepo", slug: "monorepo/turborepo" },
+        ],
+    },
+    {
+        title: "React",
+        items: [
+            { title: "How React Works", slug: "react/how-react-works" },
+            { title: "Props & Event Handlers", slug: "react/props-and-events" },
+            { title: "State", slug: "react/state" },
+            { title: "Side Effects", slug: "react/side-effects" },
+            { title: "Hooks", slug: "react/hooks" },
+            { title: "Context & State Management", slug: "react/context-and-state" },
+            { title: "Routing", slug: "react/routing" },
+            { title: "Browser APIs", slug: "react/browser-apis" },
+        ],
+    },
+    {
+        title: "Next.js",
+        items: [
+            { title: "Getting Started", slug: "nextjs/getting-started" },
+            { title: "Rendering Strategies", slug: "nextjs/rendering" },
+            { title: "Server & Client Components", slug: "nextjs/server-and-client-components" },
+            { title: "API Routes", slug: "nextjs/api-routes" },
+            { title: "Hydration", slug: "nextjs/hydration" },
+            { title: "React Hook Form", slug: "nextjs/react-hook-form" },
+            { title: "Server Actions & Forms", slug: "nextjs/server-actions-forms" },
         ],
     },
 ];

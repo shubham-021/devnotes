@@ -1,0 +1,364 @@
+---
+title: Hooks
+description: useMemo, useCallback, and useRef for performance optimization and DOM access
+---
+
+## useMemo
+
+`useMemo` memoizes (caches) the result of a calculation so it doesn't run on every render.
+
+```jsx
+const memoizedValue = useMemo(() => computeExpensiveValue(a, b), [a, b]);
+```
+
+### How It Works
+
+1. **First render**: React calls your function and stores the result
+2. **Subsequent renders**: React checks if dependencies changed
+3. **If unchanged**: Returns the cached result (skips calculation)
+4. **If changed**: Recalculates and caches the new result
+
+### When to Use useMemo
+
+```jsx
+function ProductList({ products, filter }) {
+  // Without useMemo: Filters on EVERY render
+  const filteredProducts = products.filter(p => p.category === filter);
+  
+  // With useMemo: Only filters when products or filter changes
+  const filteredProducts = useMemo(() => {
+    return products.filter(p => p.category === filter);
+  }, [products, filter]);
+  
+  return <List items={filteredProducts} />;
+}
+```
+
+### Common Use Cases
+
+| Use Case | Example |
+|----------|---------|
+| Expensive calculations | Sorting, filtering large arrays |
+| Object creation | Preventing child re-renders |
+| Derived data | Computing values from props/state |
+
+### useMemo vs useEffect
+
+These two hooks serve different purposes:
+
+```jsx
+// useMemo: Compute and return a value
+const total = useMemo(() => {
+  return a + b + c + d;
+}, [a, b, c, d]);
+
+// useEffect: Perform side effects (causes extra re-render)
+useEffect(() => {
+  setTotal(a + b + c + d);
+}, [a, b, c, d]);
+```
+
+| Aspect | useMemo | useEffect + setState |
+|--------|---------|---------------------|
+| Returns value | Yes | No |
+| Causes re-render | No | Yes (from setState) |
+| Timing | During render | After render |
+| Purpose | Optimization | Side effects |
+
+If the value doesn't need to be in state, use `useMemo`. It's cleaner and avoids extra re-renders.
+
+---
+
+## useCallback
+
+`useCallback` memoizes a function to maintain the same reference between renders.
+
+```jsx
+const memoizedFn = useCallback(() => {
+  doSomething(a, b);
+}, [a, b]);
+```
+
+### Why Function References Matter
+
+In JavaScript, functions are objects. Each render creates new function objects:
+
+```jsx
+function Parent() {
+  // First render: handleClick = new function object
+  // Second render: handleClick = different function object
+  const handleClick = () => console.log('clicked');
+  
+  return <Child onClick={handleClick} />;
+}
+```
+
+Even though both functions do the same thing, they have different references. This matters because:
+
+1. React's dependency arrays compare by reference
+2. Child components re-render when prop references change
+3. `React.memo` can't prevent re-renders with new function references
+
+### The Re-render Problem
+
+```jsx
+function Parent() {
+  const [count, setCount] = useState(0);
+  
+  // New function reference on every render
+  const handleClick = () => {
+    console.log('clicked');
+  };
+  
+  return (
+    <div>
+      <button onClick={() => setCount(count + 1)}>
+        Count: {count}
+      </button>
+      {/* Child re-renders even though handleClick behavior is unchanged */}
+      <ExpensiveChild onClick={handleClick} />
+    </div>
+  );
+}
+
+const ExpensiveChild = React.memo(({ onClick }) => {
+  console.log('ExpensiveChild rendered');
+  return <button onClick={onClick}>Click me</button>;
+});
+```
+
+When `count` changes:
+1. `Parent` re-renders
+2. New `handleClick` function is created
+3. `ExpensiveChild` receives a new prop reference
+4. `React.memo` sees different reference, allows re-render
+5. `ExpensiveChild` re-renders unnecessarily
+
+### The Solution
+
+```jsx
+function Parent() {
+  const [count, setCount] = useState(0);
+  
+  // Same function reference between renders
+  const handleClick = useCallback(() => {
+    console.log('clicked');
+  }, []); // Empty deps = stable reference
+  
+  return (
+    <div>
+      <button onClick={() => setCount(count + 1)}>
+        Count: {count}
+      </button>
+      {/* Child no longer re-renders on count changes */}
+      <ExpensiveChild onClick={handleClick} />
+    </div>
+  );
+}
+```
+
+Now when `count` changes:
+1. `Parent` re-renders
+2. `handleClick` returns the same reference (memoized)
+3. `React.memo` sees same reference, skips re-render
+4. `ExpensiveChild` doesn't re-render
+
+### When to Use useCallback
+
+| Scenario | Use useCallback? |
+|----------|------------------|
+| Passing to memoized child | Yes |
+| Function in useEffect deps | Yes |
+| Simple event handler | Usually no |
+| Function isn't passed down | No |
+
+Don't overuse it. The memoization itself has a cost. Use it when you have measurable performance issues or when passing functions to memoized components.
+
+---
+
+## useRef
+
+`useRef` creates a mutable reference that persists across renders without causing re-renders.
+
+```jsx
+const myRef = useRef(initialValue);
+console.log(myRef.current); // Access the value
+myRef.current = newValue;   // Update without re-render
+```
+
+### Key Characteristics
+
+| Feature | useRef | useState |
+|---------|--------|----------|
+| Persists across renders | Yes | Yes |
+| Triggers re-render on change | No | Yes |
+| Access pattern | `.current` | Direct value |
+| Use case | DOM refs, mutable values | UI state |
+
+### Accessing DOM Elements
+
+The most common use case: referencing DOM elements.
+
+```jsx
+function TextInput() {
+  const inputRef = useRef(null);
+  
+  const focusInput = () => {
+    inputRef.current.focus();
+  };
+  
+  return (
+    <div>
+      <input ref={inputRef} type="text" />
+      <button onClick={focusInput}>Focus Input</button>
+    </div>
+  );
+}
+```
+
+### Why Not Use getElementById?
+
+```jsx
+// Wrong: Bypasses React, can cause conflicts
+const input = document.getElementById('myInput');
+input.focus();
+
+// Correct: Works within React's lifecycle
+const inputRef = useRef(null);
+inputRef.current.focus();
+```
+
+Problems with direct DOM manipulation:
+
+| Issue | Explanation |
+|-------|-------------|
+| React doesn't know | Your changes may be overwritten on next render |
+| Timing issues | Element might not exist when you try to access it |
+| Debugging | Harder to track what's changing the DOM |
+| Declarative breaks | You lose React's predictable rendering model |
+
+### Storing Mutable Values
+
+Use `useRef` for values that need to persist but shouldn't trigger re-renders:
+
+```jsx
+function Timer() {
+  const [seconds, setSeconds] = useState(0);
+  const intervalRef = useRef(null);
+  
+  const start = () => {
+    intervalRef.current = setInterval(() => {
+      setSeconds(s => s + 1);
+    }, 1000);
+  };
+  
+  const stop = () => {
+    clearInterval(intervalRef.current);
+  };
+  
+  return (
+    <div>
+      <p>Seconds: {seconds}</p>
+      <button onClick={start}>Start</button>
+      <button onClick={stop}>Stop</button>
+    </div>
+  );
+}
+```
+
+### Storing Previous Values
+
+```jsx
+function Counter() {
+  const [count, setCount] = useState(0);
+  const prevCountRef = useRef();
+  
+  useEffect(() => {
+    prevCountRef.current = count;
+  });
+  
+  return (
+    <div>
+      <p>Current: {count}</p>
+      <p>Previous: {prevCountRef.current}</p>
+      <button onClick={() => setCount(count + 1)}>Increment</button>
+    </div>
+  );
+}
+```
+
+### Multiple Refs
+
+Each element needs its own ref:
+
+```jsx
+function Form() {
+  const nameRef = useRef(null);
+  const emailRef = useRef(null);
+  const passwordRef = useRef(null);
+  
+  const focusNext = (nextRef) => {
+    nextRef.current.focus();
+  };
+  
+  return (
+    <form>
+      <input 
+        ref={nameRef} 
+        onKeyDown={(e) => e.key === 'Enter' && focusNext(emailRef)} 
+      />
+      <input 
+        ref={emailRef}
+        onKeyDown={(e) => e.key === 'Enter' && focusNext(passwordRef)}
+      />
+      <input ref={passwordRef} type="password" />
+    </form>
+  );
+}
+```
+
+---
+
+## Quick Reference
+
+### useMemo
+
+```jsx
+// Memoize expensive calculation
+const result = useMemo(() => expensiveCalc(data), [data]);
+
+// Memoize object to prevent child re-renders
+const config = useMemo(() => ({ theme, locale }), [theme, locale]);
+```
+
+### useCallback
+
+```jsx
+// Memoize function for memoized child
+const handleClick = useCallback(() => {
+  doSomething(id);
+}, [id]);
+
+// With dependencies
+const handleSubmit = useCallback((data) => {
+  submitForm(userId, data);
+}, [userId]);
+```
+
+### useRef
+
+```jsx
+// DOM reference
+const inputRef = useRef(null);
+<input ref={inputRef} />
+inputRef.current.focus();
+
+// Mutable value (no re-render)
+const countRef = useRef(0);
+countRef.current += 1;
+
+// Store interval/timeout ID
+const intervalRef = useRef(null);
+intervalRef.current = setInterval(...);
+clearInterval(intervalRef.current);
+```

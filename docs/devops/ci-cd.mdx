@@ -1,0 +1,532 @@
+---
+title: CI/CD Pipelines
+description: Understanding Continuous Integration and Deployment with GitHub Actions
+---
+
+## What is CI/CD?
+
+CI/CD is a practice that automates the process of testing and deploying your code. It consists of two parts:
+
+- **CI (Continuous Integration)** — Automatically testing your code when you push it
+- **CD (Continuous Deployment)** — Automatically deploying your app after tests pass
+
+---
+
+## Why Do We Need It?
+
+### Without CI/CD
+
+1. You write code
+2. You manually test it
+3. You build it locally
+4. You manually deploy it to the server
+5. Something breaks, you debug for hours
+
+This is **slow**, **error-prone**, and **tedious**.
+
+### With CI/CD
+
+1. You push code to GitHub
+2. Tests run automatically (CI)
+3. Code is built automatically
+4. If everything passes, it auto-deploys to production (CD)
+
+This is **fast**, **safe**, and **reliable**.
+
+---
+
+## CI: Continuous Integration
+
+> "Every code change should be tested automatically."
+
+CI answers the question: **"Does this code work?"**
+
+When you push code, CI automatically runs:
+- Unit tests
+- Integration tests
+- Linting (code style checks)
+- Type checking
+- Security scans
+
+If any of these fail, you're notified immediately — before the broken code reaches production.
+
+**Think of CI as your automatic code reviewer that never sleeps.**
+
+---
+
+## CD: Continuous Deployment
+
+> "Every working change should be deployed automatically."
+
+CD handles everything after CI passes:
+- Builds your application
+- Creates Docker images (if needed)
+- Uploads to your hosting platform
+- Deploys to production
+
+**Think of CD as your auto-publish button.**
+
+### Deployment vs Delivery
+
+| Term | Meaning |
+|------|---------|
+| **Continuous Delivery** | Code is automatically built and *ready* to deploy, but requires manual approval |
+| **Continuous Deployment** | Code is automatically deployed to production with no manual steps |
+
+Most teams start with Delivery and move to Deployment as they gain confidence.
+
+---
+
+## Benefits of CI/CD
+
+| Benefit | Without CI/CD | With CI/CD |
+|---------|---------------|------------|
+| **Speed** | Manual testing takes hours | Automated tests run in minutes |
+| **Reliability** | Human error during deployment | Consistent, repeatable process |
+| **Bug Detection** | Bugs found in production | Bugs caught before merge |
+| **Team Collaboration** | "It works on my machine" | Everyone's code is tested equally |
+| **Deployment Frequency** | Deploy weekly or monthly | Deploy multiple times per day |
+
+---
+
+## Popular CI/CD Tools
+
+| Tool | Best For |
+|------|----------|
+| **GitHub Actions** | Projects hosted on GitHub |
+| **Vercel** | Next.js and frontend apps |
+| **Netlify** | Static sites and JAMstack |
+| **CircleCI** | Complex enterprise pipelines |
+| **Jenkins** | Self-hosted, highly customizable |
+| **GitLab CI** | Projects hosted on GitLab |
+
+---
+
+## GitHub Actions: The Complete Guide
+
+GitHub Actions is GitHub's built-in CI/CD platform. It's free for public repositories and has generous limits for private repos.
+
+### Core Concepts
+
+Before writing your first workflow, you need to understand these terms:
+
+#### Workflow
+
+A **workflow** is an automated process defined in a YAML file. It lives in your repository at `.github/workflows/`.
+
+```
+your-repo/
+  .github/
+    workflows/
+      ci.yml           # Runs tests on every push
+      deploy.yml       # Deploys to production
+  src/
+  package.json
+```
+
+You can have multiple workflows, each serving a different purpose.
+
+#### Event (Trigger)
+
+An **event** is what causes a workflow to run. Common events include:
+
+| Event | When It Fires |
+|-------|---------------|
+| `push` | Code is pushed to a branch |
+| `pull_request` | A PR is opened, updated, or merged |
+| `schedule` | On a cron schedule (e.g., daily) |
+| `workflow_dispatch` | Manually triggered from GitHub UI |
+| `release` | A release is published |
+
+#### Job
+
+A **job** is a set of steps that run on the same machine. Jobs run in parallel by default.
+
+```yaml
+jobs:
+  test:        # First job
+    # ... steps to run tests
+  
+  build:       # Second job
+    # ... steps to build the app
+  
+  deploy:      # Third job
+    # ... steps to deploy
+```
+
+#### Step
+
+A **step** is a single task within a job. Steps run sequentially (one after another).
+
+```yaml
+steps:
+  - name: Checkout code        # Step 1
+  - name: Install dependencies # Step 2
+  - name: Run tests            # Step 3
+```
+
+#### Runner
+
+A **runner** is the machine that executes your job. GitHub provides hosted runners:
+
+| Runner | OS |
+|--------|-----|
+| `ubuntu-latest` | Linux (most common) |
+| `macos-latest` | macOS |
+| `windows-latest` | Windows |
+
+#### Action
+
+An **action** is a reusable piece of code that performs a common task. Instead of writing shell commands, you use pre-built actions.
+
+```yaml
+# Using an action
+- uses: actions/checkout@v4    # Clones your repo
+- uses: actions/setup-node@v4  # Installs Node.js
+```
+
+Actions are shared on the [GitHub Marketplace](https://github.com/marketplace?type=actions).
+
+---
+
+### Your First Workflow
+
+Let's build a CI workflow step by step:
+
+```yaml
+# .github/workflows/ci.yml
+
+name: CI Pipeline
+```
+
+**`name`** — A human-readable name that appears in the GitHub UI.
+
+```yaml
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+```
+
+**`on`** — Defines when this workflow runs:
+- On every `push` to the `main` branch
+- On every `pull_request` targeting `main`
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+```
+
+**`jobs`** — Contains all jobs in this workflow.  
+**`test`** — The name of this job (you choose this).  
+**`runs-on`** — Which runner to use.
+
+```yaml
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+```
+
+**`steps`** — The sequence of tasks in this job.  
+**`name`** — A label for this step (appears in logs).  
+**`uses`** — Runs a pre-built action. `actions/checkout@v4` clones your repository.
+
+```yaml
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+```
+
+**`with`** — Passes inputs to an action:
+- `node-version` — Which Node.js version to install
+- `cache` — Caches `node_modules` to speed up future runs
+
+```yaml
+      - name: Install dependencies
+        run: npm ci
+```
+
+**`run`** — Executes a shell command. `npm ci` is faster than `npm install` for CI environments.
+
+```yaml
+      - name: Run linter
+        run: npm run lint
+
+      - name: Run type check
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+```
+
+Each `run` step executes a command. If any command fails (non-zero exit code), the workflow stops.
+
+### Complete Example
+
+```yaml
+# .github/workflows/ci.yml
+
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Run type check
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+```
+
+---
+
+### Adding Continuous Deployment
+
+Here's a complete CI/CD workflow that tests, builds, and deploys:
+
+```yaml
+# .github/workflows/deploy.yml
+
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+
+  build:
+    name: Build
+    needs: test  # Only runs if 'test' succeeds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+
+  deploy:
+    name: Deploy
+    needs: build  # Only runs if 'build' succeeds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      # Example: Deploy to Vercel
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+```
+
+#### Job Dependencies with `needs`
+
+```yaml
+jobs:
+  test:
+    # Runs first
+
+  build:
+    needs: test    # Waits for 'test' to pass
+
+  deploy:
+    needs: build   # Waits for 'build' to pass
+```
+
+This creates a pipeline: `test` → `build` → `deploy`
+
+---
+
+### Environment Variables and Secrets
+
+#### Environment Variables
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: production
+      API_URL: https://api.example.com
+    steps:
+      - run: echo $NODE_ENV  # Outputs: production
+```
+
+#### Secrets
+
+Never hardcode sensitive values like API keys. Use GitHub Secrets instead:
+
+1. Go to your repo → Settings → Secrets and variables → Actions
+2. Click "New repository secret"
+3. Add your secret (e.g., `VERCEL_TOKEN`)
+
+Access secrets in your workflow:
+
+```yaml
+steps:
+  - name: Deploy
+    env:
+      API_KEY: ${{ secrets.API_KEY }}
+    run: ./deploy.sh
+```
+
+Secrets are encrypted and never printed in logs.
+
+---
+
+### Conditional Execution
+
+Run steps only when certain conditions are met:
+
+```yaml
+steps:
+  - name: Deploy to production
+    if: github.ref == 'refs/heads/main'
+    run: ./deploy-prod.sh
+
+  - name: Deploy to staging
+    if: github.ref == 'refs/heads/develop'
+    run: ./deploy-staging.sh
+
+  - name: Notify on failure
+    if: failure()  # Only runs if previous steps failed
+    run: ./send-notification.sh
+```
+
+---
+
+### Matrix Builds
+
+Test against multiple versions or environments:
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: npm ci
+      - run: npm test
+```
+
+This runs the job 3 times — once for each Node.js version.
+
+---
+
+### Workflow Triggers Reference
+
+```yaml
+on:
+  # On push to specific branches
+  push:
+    branches: [main, develop]
+    paths:
+      - 'src/**'        # Only if files in src/ changed
+      - '!src/**/*.md'  # Ignore markdown files
+
+  # On pull request
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+  # On a schedule (cron syntax)
+  schedule:
+    - cron: '0 0 * * *'  # Every day at midnight UTC
+
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment target'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+```
+
+---
+
+### Common Actions
+
+| Action | Purpose |
+|--------|---------|
+| `actions/checkout@v4` | Clone your repository |
+| `actions/setup-node@v4` | Install Node.js |
+| `actions/setup-python@v5` | Install Python |
+| `actions/setup-go@v5` | Install Go |
+| `actions/cache@v4` | Cache dependencies |
+| `actions/upload-artifact@v4` | Save build outputs |
+| `actions/download-artifact@v4` | Retrieve build outputs |
+
+---
+
+## Quick Reference
+
+| Term | Description |
+|------|-------------|
+| **CI** | Automatically test code on every push |
+| **CD** | Automatically deploy after tests pass |
+| **Workflow** | YAML file defining automation (`.github/workflows/`) |
+| **Event** | What triggers a workflow (`push`, `pull_request`, etc.) |
+| **Job** | A set of steps running on one machine |
+| **Step** | A single task within a job |
+| **Runner** | The machine executing your job |
+| **Action** | Reusable code for common tasks |
+| **Secret** | Encrypted environment variable |

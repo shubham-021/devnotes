@@ -1,0 +1,545 @@
+---
+title: Git & GitHub
+description: Version control fundamentals, branching, collaboration, and common workflows
+---
+
+## What is Git?
+
+Git is a **version control system (VCS)** that tracks changes to your files over time. It lets you:
+
+- See what changed, when, and by whom
+- Revert to previous versions if something breaks
+- Work on features in isolation using branches
+- Collaborate with others without overwriting each other's work
+
+Git runs locally on your machine. **GitHub**, **GitLab**, and **Bitbucket** are remote servers that host Git repositories, enabling collaboration and backup.
+
+---
+
+## Initial Setup
+
+Configure your identity. Git attaches this information to every commit you make.
+
+```bash
+git config --global user.name "Your Name"
+git config --global user.email "your.email@example.com"
+```
+
+To verify your configuration:
+
+```bash
+git config --list
+```
+
+---
+
+## Repository Basics
+
+### Initialize a Repository
+
+```bash
+git init
+```
+
+This creates a hidden `.git` folder that tracks all changes. Run this in your project's root directory.
+
+### Check Status
+
+```bash
+git status
+```
+
+Shows which files have changed, which are staged for commit, and which are untracked.
+
+Example output:
+
+```
+On branch main
+Changes not staged for commit:
+  modified:   index.js
+
+Untracked files:
+  utils.js
+```
+
+---
+
+## The Staging Area
+
+Git has a two-step process for saving changes:
+
+1. **Stage**: Mark files you want to include in the next commit
+2. **Commit**: Save the staged changes as a snapshot
+
+Think of staging as preparing a package before shipping it.
+
+### Stage Files
+
+```bash
+# Stage a specific file
+git add index.js
+
+# Stage multiple files
+git add index.js utils.js
+
+# Stage all changes
+git add .
+```
+
+### View Changes Before Staging
+
+```bash
+git diff
+```
+
+Shows line-by-line changes. Press `q` to exit.
+
+Example output:
+
+```diff
+- const name = "old";
++ const name = "new";
+```
+
+Lines starting with `-` were removed. Lines starting with `+` were added.
+
+### Remove a File
+
+```bash
+git rm filename.js
+```
+
+Removes the file from both your working directory and Git tracking.
+
+---
+
+## Commits
+
+A commit is a snapshot of your project at a specific point in time. Each commit has:
+
+- A unique ID (SHA hash)
+- Author information
+- Timestamp
+- A message describing the change
+
+### Create a Commit
+
+```bash
+git commit -m "Add user authentication"
+```
+
+The message should describe **what** the change does, not how.
+
+### View Commit History
+
+```bash
+# Full history
+git log
+
+# Compact one-line format
+git log --oneline
+```
+
+Example `git log --oneline` output:
+
+```
+a1b2c3d Add user authentication
+e4f5g6h Fix login bug
+i7j8k9l Initial commit
+```
+
+### Inspect a Specific Commit
+
+```bash
+git show a1b2c3d
+```
+
+Shows the full details of that commit, including the diff.
+
+### See Who Changed Each Line
+
+```bash
+git blame index.js
+```
+
+Shows the commit SHA, author, and timestamp for each line of a file. Useful for understanding why code exists.
+
+---
+
+## Understanding Commits as a Chain
+
+Git commits form a linked list. Each commit points to its parent (the previous commit).
+
+```
+[Initial] --> [Add feature] --> [Fix bug] --> [Update docs]
+                                                    ^
+                                                   HEAD
+```
+
+**HEAD** is a pointer to your current position in the commit history, typically the latest commit on your branch.
+
+---
+
+## Undoing Changes
+
+### Reset: Rewrite History
+
+`git reset` moves HEAD to a different commit, effectively removing commits from history.
+
+```bash
+git reset --hard a1b2c3d
+```
+
+This moves HEAD to commit `a1b2c3d` and **discards all changes** after it. The commits are gone from your history.
+
+| Flag | What Happens to Changes |
+|------|------------------------|
+| `--soft` | Keeps changes staged |
+| `--mixed` | Keeps changes unstaged (default) |
+| `--hard` | Discards changes completely |
+
+### Revert: Safe Undo
+
+`git revert` creates a new commit that undoes a specific commit without erasing history.
+
+```bash
+git revert a1b2c3d
+```
+
+Before revert:
+
+```
+[A] --> [B] --> [C]
+                 ^
+                HEAD
+```
+
+After reverting commit B:
+
+```
+[A] --> [B] --> [C] --> [Revert B]
+                             ^
+                            HEAD
+```
+
+The original commits remain intact. Use revert when working with shared branches.
+
+| Command | Modifies History | Safe for Shared Branches |
+|---------|-----------------|-------------------------|
+| `git reset` | Yes | No |
+| `git revert` | No | Yes |
+
+---
+
+## Branches
+
+Branches let you work on features or fixes in isolation without affecting the main codebase.
+
+### View Branches
+
+```bash
+git branch
+```
+
+The current branch is marked with `*`.
+
+### Create a Branch
+
+```bash
+git branch feature-login
+```
+
+### Switch Branches
+
+```bash
+git checkout feature-login
+```
+
+### Create and Switch in One Command
+
+```bash
+git checkout -b feature-login
+```
+
+### Rename a Branch
+
+```bash
+git branch -m master main
+```
+
+### Branch Naming Conventions
+
+| Prefix | Purpose | Example |
+|--------|---------|---------|
+| `feature/` | New functionality | `feature/user-auth` |
+| `fix/` | Bug fixes | `fix/login-crash` |
+| `hotfix/` | Urgent production fixes | `hotfix/security-patch` |
+| `docs/` | Documentation changes | `docs/api-reference` |
+
+---
+
+## Merging
+
+Merging combines changes from one branch into another.
+
+### Basic Merge
+
+```bash
+# Switch to the branch you want to merge INTO
+git checkout main
+
+# Merge the feature branch
+git merge feature-login
+```
+
+This creates a merge commit that combines both branches:
+
+```
+main:    [A] --> [B] -----------> [Merge]
+                   \             /
+feature:            [C] --> [D]
+```
+
+### Merge vs Rebase
+
+**Merge** creates a merge commit, preserving the branch structure:
+
+```bash
+git checkout main
+git merge feature-login
+```
+
+**Rebase** replays your commits on top of another branch, creating a linear history:
+
+```bash
+git checkout feature-login
+git rebase main
+git checkout main
+git merge feature-login
+```
+
+Before rebase:
+
+```
+main:    [A] --> [B]
+                   \
+feature:            [C] --> [D]
+```
+
+After rebase:
+
+```
+main:    [A] --> [B] --> [C'] --> [D']
+```
+
+| Approach | History | Use When |
+|----------|---------|----------|
+| Merge | Non-linear, shows branch structure | Preserving context of feature branches |
+| Rebase | Linear, cleaner | Keeping history clean before merging |
+
+Rebase rewrites commit history. Never rebase commits that have been pushed to a shared branch.
+
+---
+
+## Remote Repositories
+
+A **remote** is a copy of your repository hosted on a server. It enables collaboration and backup.
+
+### Add a Remote
+
+```bash
+git remote add origin https://github.com/username/repo.git
+```
+
+- `origin` is the conventional name for your primary remote
+- You can add multiple remotes with different names
+
+### View Remotes
+
+```bash
+git remote -v
+```
+
+### Push to Remote
+
+```bash
+git push origin main
+```
+
+Sends your local `main` branch to the `origin` remote.
+
+### The -u Flag
+
+```bash
+git push -u origin main
+```
+
+The `-u` (or `--set-upstream`) flag sets up tracking between your local and remote branch. After this, you can simply use:
+
+```bash
+git push
+git pull
+```
+
+Without specifying the remote and branch each time.
+
+### Push with Different Branch Names
+
+If your local branch is `master` but you want to push it as `main` on the remote:
+
+```bash
+git push -u origin master:main
+```
+
+### Pull Changes
+
+```bash
+git pull origin main
+```
+
+Fetches changes from the remote and merges them into your local branch.
+
+---
+
+## SSH Authentication
+
+GitHub repositories are protected. You authenticate using SSH keys.
+
+### How SSH Works
+
+1. Generate a key pair on your local machine (public + private)
+2. Add the public key to your GitHub account
+3. Git uses the private key (never shared) to prove your identity
+
+### Generate SSH Keys
+
+```bash
+ssh-keygen -t ed25519 -C "your.email@example.com"
+```
+
+This creates two files:
+
+- `~/.ssh/id_ed25519` (private key - never share)
+- `~/.ssh/id_ed25519.pub` (public key - add to GitHub)
+
+### Add Public Key to GitHub
+
+1. Copy your public key: `cat ~/.ssh/id_ed25519.pub`
+2. Go to GitHub Settings > SSH and GPG keys
+3. Click "New SSH key" and paste the key
+
+### Test the Connection
+
+```bash
+ssh -T git@github.com
+```
+
+---
+
+## Stashing
+
+Stash temporarily saves your uncommitted changes so you can switch branches without committing incomplete work.
+
+### Save Changes to Stash
+
+```bash
+git stash
+```
+
+Your working directory is now clean, and changes are saved in the stash.
+
+### View Stashed Changes
+
+```bash
+git stash list
+```
+
+Output:
+
+```
+stash@{0}: WIP on feature-login: a1b2c3d Add login form
+stash@{1}: WIP on main: e4f5g6h Update readme
+```
+
+### Restore Stashed Changes
+
+```bash
+# Apply and keep in stash
+git stash apply
+
+# Apply and remove from stash
+git stash pop
+
+# Apply a specific stash
+git stash apply stash@{1}
+```
+
+### Discard a Stash
+
+```bash
+# Remove the most recent stash
+git stash drop
+
+# Remove a specific stash
+git stash drop stash@{1}
+
+# Clear all stashes
+git stash clear
+```
+
+---
+
+## Common Workflows
+
+### Starting a New Feature
+
+```bash
+git checkout main
+git pull
+git checkout -b feature/new-feature
+# Make changes
+git add .
+git commit -m "Add new feature"
+git push -u origin feature/new-feature
+```
+
+Then create a Pull Request on GitHub.
+
+### Updating Your Branch with Main
+
+```bash
+git checkout feature/new-feature
+git fetch origin
+git merge origin/main
+# Or: git rebase origin/main
+```
+
+### Reviewing a Pull Request Locally
+
+```bash
+git fetch origin
+git checkout origin/feature-branch
+```
+
+---
+
+## Quick Reference
+
+| Command | Purpose |
+|---------|---------|
+| `git init` | Initialize a repository |
+| `git status` | View changed files |
+| `git add .` | Stage all changes |
+| `git commit -m "msg"` | Create a commit |
+| `git log --oneline` | View commit history |
+| `git diff` | View unstaged changes |
+| `git branch name` | Create a branch |
+| `git checkout name` | Switch branches |
+| `git checkout -b name` | Create and switch |
+| `git merge branch` | Merge a branch |
+| `git push` | Upload to remote |
+| `git pull` | Download from remote |
+| `git stash` | Save uncommitted changes |
+| `git stash pop` | Restore stashed changes |
+| `git reset --hard SHA` | Discard commits (destructive) |
+| `git revert SHA` | Undo a commit (safe) |

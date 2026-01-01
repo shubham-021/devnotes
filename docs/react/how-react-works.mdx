@@ -1,0 +1,221 @@
+---
+title: How React Works
+description: Understanding the DOM, Virtual DOM, and React's reconciliation algorithm
+---
+
+## The DOM Problem
+
+The **DOM (Document Object Model)** represents your webpage as a tree structure where each node is an object representing part of the document — elements, text, attributes, and more.
+
+When JavaScript manipulates the DOM directly, there are performance costs:
+
+| Operation | Problem |
+|-----------|---------|
+| **DOM updates** | Relatively slow compared to in-memory operations |
+| **Direct manipulation** | Triggers layout recalculations and repaints |
+| **Each change** | Can cause browser reflows (expensive) |
+
+Every time you change the DOM, the browser may need to:
+
+1. Recalculate CSS styles
+2. Recalculate layout positions
+3. Repaint pixels on screen
+4. Composite layers together
+
+For simple applications, this isn't noticeable. But for complex UIs with frequent updates, direct DOM manipulation becomes a bottleneck.
+
+---
+
+## The Virtual DOM
+
+React's solution is the **Virtual DOM** — a lightweight JavaScript representation of the actual DOM.
+
+```javascript
+// This JSX:
+<div className="container">
+  <h1>Hello</h1>
+  <p>World</p>
+</div>
+
+// Becomes a JavaScript object (Virtual DOM):
+{
+  type: 'div',
+  props: { className: 'container' },
+  children: [
+    { type: 'h1', props: {}, children: ['Hello'] },
+    { type: 'p', props: {}, children: ['World'] }
+  ]
+}
+```
+
+### Key Characteristics
+
+| Aspect | Real DOM | Virtual DOM |
+|--------|----------|-------------|
+| **Nature** | Browser API, actual elements | Plain JavaScript object |
+| **Location** | Browser memory | JavaScript memory |
+| **Speed** | Slow to modify | Fast to modify |
+| **Updates** | Immediately affects page | No visual effect until synced |
+
+### How It Works
+
+1. React maintains a Virtual DOM tree in memory
+2. When state or props change, React creates a **new** Virtual DOM tree
+3. React compares the new tree with the previous one
+4. Only the differences are applied to the real DOM
+
+This process is called **reconciliation**.
+
+---
+
+## Reconciliation: The Diffing Algorithm
+
+**Reconciliation** is React's algorithm for determining what changed between renders and updating the DOM efficiently.
+
+### The Process
+
+```
+State/Props Change
+       ↓
+New Virtual DOM Created
+       ↓
+Compared with Previous Virtual DOM
+       ↓
+Differences Calculated (Diff)
+       ↓
+Minimal DOM Updates Applied
+```
+
+### How React Compares Elements
+
+#### 1. Element Type Comparison
+
+If the element type changes, React rebuilds the entire subtree:
+
+```jsx
+// Before
+<div>
+  <Counter />
+</div>
+
+// After
+<span>
+  <Counter />
+</span>
+```
+
+React will destroy the old `Counter` component and mount a new one because the parent changed from `div` to `span`.
+
+#### 2. Same Element Type
+
+If the element type is the same, React updates only the changed attributes:
+
+```jsx
+// Before
+<div className="old" title="stuff" />
+
+// After
+<div className="new" title="stuff" />
+```
+
+React only updates the `className` attribute.
+
+#### 3. Component Elements
+
+For components, React updates the props and calls the render method:
+
+```jsx
+// Before
+<Profile name="Alice" />
+
+// After
+<Profile name="Bob" />
+```
+
+The component stays mounted; only props change.
+
+---
+
+## The Role of Keys
+
+When rendering lists, React needs help identifying which items changed:
+
+```jsx
+// Without keys - React doesn't know which item is which
+<ul>
+  <li>Alice</li>
+  <li>Bob</li>
+</ul>
+
+// With keys - React can track each item
+<ul>
+  <li key="1">Alice</li>
+  <li key="2">Bob</li>
+</ul>
+```
+
+### Why Keys Matter
+
+| Without Keys | With Keys |
+|--------------|-----------|
+| React re-renders entire list | React updates only changed items |
+| Reorders cause bugs | Reorders handled correctly |
+| Input state gets lost | Input state preserved |
+| Animations break | Animations work properly |
+
+### Key Rules
+
+```jsx
+// Good: Unique, stable ID
+{users.map(user => (
+  <UserCard key={user.id} user={user} />
+))}
+
+// Bad: Index as key (only okay for static lists)
+{items.map((item, index) => (
+  <Item key={index} item={item} />
+))}
+
+// Wrong: Random values
+{items.map(item => (
+  <Item key={Math.random()} item={item} />
+))}
+```
+
+---
+
+## React's Optimizations
+
+### Batching
+
+React batches multiple state updates into a single re-render:
+
+```jsx
+function handleClick() {
+  setCount(count + 1);
+  setFlag(true);
+  setName("React");
+  // React batches these into ONE re-render
+}
+```
+
+### Fiber Architecture
+
+React's internal "Fiber" architecture allows:
+
+- **Interruptible rendering** — Pause and resume work
+- **Priority-based updates** — Urgent updates first
+- **Concurrent features** — Multiple versions of UI in memory
+
+---
+
+## Summary
+
+| Concept | Purpose |
+|---------|---------|
+| **DOM** | Browser's representation of the page |
+| **Virtual DOM** | JavaScript copy for fast comparisons |
+| **Reconciliation** | Algorithm to find minimal DOM changes |
+| **Diffing** | Process of comparing Virtual DOM trees |
+| **Keys** | Help React track list items across renders |
+| **Batching** | Combine multiple updates into one render |

@@ -1,0 +1,369 @@
+---
+title: Browser APIs
+description: Understanding the Window object and APIs in web development
+---
+
+## What is an API?
+
+**API** stands for **Application Programming Interface**. Let's break it down:
+
+- **Application** — Your app, the browser, a library, or a service
+- **Programming Interface** — The way you interact with it using code
+
+An API is a set of tools, methods, or patterns that let you interact with something — whether that's a server, a library, or the browser itself.
+
+### APIs Are Everywhere
+
+| Type | Example | What It Provides |
+|------|---------|------------------|
+| **Web APIs** | Fetch API | Make HTTP requests |
+| **Browser APIs** | DOM API | Manipulate the page |
+| **Library APIs** | React API | Build UIs with components |
+| **Service APIs** | Twitter API | Access Twitter data |
+
+### Why "Suspense API" or "Context API"?
+
+When people say "Suspense API" or "Context API," they mean the set of tools React provides:
+
+```jsx
+// Context API includes:
+React.createContext()     // Function
+<Context.Provider>        // Component
+useContext()              // Hook
+
+// Suspense API includes:
+<Suspense>                // Component
+React.lazy()              // Function
+useTransition()           // Hook
+```
+
+They're called "APIs" because they're interfaces to React's internal features.
+
+---
+
+## The Window Object
+
+The `window` object is the **global object** in browser JavaScript. It represents the browser window and provides access to browser features.
+
+### What Is It?
+
+```javascript
+// All of these are equivalent
+window.console.log('Hello');
+console.log('Hello');
+
+window.document.getElementById('app');
+document.getElementById('app');
+
+window.setTimeout(() => {}, 1000);
+setTimeout(() => {}, 1000);
+```
+
+Every global variable and function is actually a property of `window`:
+
+```javascript
+var myGlobal = 'value';
+console.log(window.myGlobal); // 'value'
+
+function myFunc() {}
+console.log(window.myFunc); // function myFunc() {}
+```
+
+---
+
+## Key Window Properties
+
+### Browser Window Dimensions
+
+```javascript
+// Interior dimensions (viewport)
+window.innerWidth   // 1200
+window.innerHeight  // 800
+
+// Full window including browser UI
+window.outerWidth   // 1280
+window.outerHeight  // 900
+```
+
+### Location (URL)
+
+```javascript
+window.location.href      // 'https://example.com/page?q=test'
+window.location.hostname  // 'example.com'
+window.location.pathname  // '/page'
+window.location.search    // '?q=test'
+
+// Navigate to new URL
+window.location.href = 'https://newsite.com';
+
+// Reload the page
+window.location.reload();
+```
+
+### History (Navigation)
+
+```javascript
+// Go back/forward
+window.history.back();
+window.history.forward();
+
+// Go back 2 pages
+window.history.go(-2);
+
+// Add to history without navigation
+window.history.pushState({ page: 2 }, '', '/page2');
+```
+
+### Navigator (Browser Info)
+
+```javascript
+window.navigator.userAgent    // Browser info string
+window.navigator.language     // 'en-US'
+window.navigator.onLine       // true/false
+window.navigator.clipboard    // Clipboard API
+```
+
+### Screen (Display Info)
+
+```javascript
+window.screen.width       // 1920
+window.screen.height      // 1080
+window.screen.availWidth  // Available width (minus taskbar)
+window.screen.availHeight // Available height
+```
+
+---
+
+## Storage APIs
+
+### localStorage (Persistent)
+
+Data persists even after browser closes:
+
+```javascript
+// Save
+localStorage.setItem('theme', 'dark');
+
+// Read
+const theme = localStorage.getItem('theme'); // 'dark'
+
+// Remove
+localStorage.removeItem('theme');
+
+// Clear all
+localStorage.clear();
+```
+
+### sessionStorage (Session Only)
+
+Data cleared when tab closes:
+
+```javascript
+// Same API as localStorage
+sessionStorage.setItem('token', 'abc123');
+const token = sessionStorage.getItem('token');
+```
+
+### Storing Objects
+
+Storage only accepts strings:
+
+```javascript
+// Save object
+const user = { name: 'Alice', age: 25 };
+localStorage.setItem('user', JSON.stringify(user));
+
+// Read object
+const stored = localStorage.getItem('user');
+const user = JSON.parse(stored);
+```
+
+---
+
+## Timing Functions
+
+### setTimeout
+
+Execute code after a delay:
+
+```javascript
+const timeoutId = setTimeout(() => {
+  console.log('Runs after 2 seconds');
+}, 2000);
+
+// Cancel before it runs
+clearTimeout(timeoutId);
+```
+
+### setInterval
+
+Execute code repeatedly:
+
+```javascript
+const intervalId = setInterval(() => {
+  console.log('Runs every second');
+}, 1000);
+
+// Stop the interval
+clearInterval(intervalId);
+```
+
+### requestAnimationFrame
+
+Optimized for animations (runs before repaint):
+
+```javascript
+function animate() {
+  // Update animation
+  element.style.left = `${position}px`;
+  position += 1;
+  
+  // Continue animation
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+```
+
+---
+
+## Dialog Methods
+
+```javascript
+// Alert - simple message
+window.alert('Something happened!');
+
+// Confirm - yes/no question
+const confirmed = window.confirm('Are you sure?');
+if (confirmed) {
+  // User clicked OK
+}
+
+// Prompt - get user input
+const name = window.prompt('What is your name?', 'Default');
+```
+
+---
+
+## Network Requests
+
+### Fetch API
+
+Modern way to make HTTP requests:
+
+```javascript
+// GET request
+const response = await fetch('https://api.example.com/data');
+const data = await response.json();
+
+// POST request
+const response = await fetch('https://api.example.com/data', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ name: 'Alice' }),
+});
+```
+
+---
+
+## Events
+
+### Adding Event Listeners
+
+```javascript
+window.addEventListener('resize', () => {
+  console.log(`Window is now ${window.innerWidth}px wide`);
+});
+
+window.addEventListener('scroll', () => {
+  console.log(`Scrolled to ${window.scrollY}px`);
+});
+
+window.addEventListener('online', () => {
+  console.log('Back online!');
+});
+
+window.addEventListener('offline', () => {
+  console.log('Lost connection');
+});
+```
+
+### Removing Event Listeners
+
+```javascript
+function handleResize() {
+  console.log('Resized');
+}
+
+window.addEventListener('resize', handleResize);
+window.removeEventListener('resize', handleResize);
+```
+
+---
+
+## Using Window in React
+
+Access browser APIs inside effects:
+
+```jsx
+import { useState, useEffect } from 'react';
+
+function useWindowSize() {
+  const [size, setSize] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+  
+  useEffect(() => {
+    function handleResize() {
+      setSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    }
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  
+  return size;
+}
+```
+
+### Server-Side Rendering Caveat
+
+`window` doesn't exist on the server:
+
+```jsx
+// Wrong: Crashes during SSR
+const width = window.innerWidth;
+
+// Correct: Check if window exists
+const width = typeof window !== 'undefined' 
+  ? window.innerWidth 
+  : 0;
+
+// Correct: Access in useEffect (client only)
+useEffect(() => {
+  const width = window.innerWidth;
+}, []);
+```
+
+---
+
+## Quick Reference
+
+| API | Purpose |
+|-----|---------|
+| `window.location` | Current URL and navigation |
+| `window.history` | Browser history manipulation |
+| `window.navigator` | Browser and system info |
+| `window.screen` | Display information |
+| `localStorage` | Persistent storage |
+| `sessionStorage` | Session-only storage |
+| `setTimeout` | Delayed execution |
+| `setInterval` | Repeated execution |
+| `fetch` | HTTP requests |
+| `addEventListener` | Event handling |

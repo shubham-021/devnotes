@@ -1,0 +1,423 @@
+---
+title: Classic Algorithms
+description: Essential algorithms every programmer should know
+---
+
+## Dutch National Flag Algorithm
+
+**Problem**: Sort an array containing only 0s, 1s, and 2s in a single pass.
+
+### The Approach
+
+Use three pointers:
+- `low`: boundary for 0s (everything before `low` is 0)
+- `mid`: current element being examined
+- `high`: boundary for 2s (everything after `high` is 2)
+
+### Regions
+
+```
+[0...low-1]   → all 0s
+[low...mid-1] → all 1s
+[mid...high]  → unsorted (to be processed)
+[high+1...n] → all 2s
+```
+
+### Algorithm
+
+```cpp
+void dutchFlag(vector<int>& arr) {
+    int low = 0, mid = 0, high = arr.size() - 1;
+    
+    while (mid <= high) {
+        if (arr[mid] == 0) {
+            swap(arr[low], arr[mid]);
+            low++;
+            mid++;
+        } else if (arr[mid] == 1) {
+            mid++;
+        } else {  // arr[mid] == 2
+            swap(arr[mid], arr[high]);
+            high--;
+            // Don't increment mid — swapped element needs checking
+        }
+    }
+}
+```
+
+### Example
+
+```
+[2, 0, 1, 2, 0, 1]
+ L,M           H
+
+mid=0: arr[0]=2, swap with high
+[1, 0, 1, 2, 0, 2]
+ L,M        H
+
+mid=0: arr[0]=1, just move mid
+[1, 0, 1, 2, 0, 2]
+ L  M       H
+
+mid=1: arr[1]=0, swap with low, move both
+[0, 1, 1, 2, 0, 2]
+    L  M    H
+
+...continue until mid > high
+[0, 0, 1, 1, 2, 2] ✓
+```
+
+**Time**: O(n) | **Space**: O(1)
+
+---
+
+## Moore's Voting Algorithm
+
+**Problem**: Find the majority element (appears more than n/2 times).
+
+### The Intuition
+
+If an element appears more than n/2 times, it will "survive" after canceling out with all other elements.
+
+### Algorithm
+
+1. **Phase 1**: Find a candidate
+   - Keep a counter and candidate
+   - If counter is 0, set current element as candidate
+   - If current equals candidate, increment counter
+   - Otherwise, decrement counter
+
+2. **Phase 2**: Verify the candidate (count its occurrences)
+
+### Implementation
+
+```cpp
+int majorityElement(vector<int>& nums) {
+    int candidate = 0, count = 0;
+    
+    // Phase 1: Find candidate
+    for (int num : nums) {
+        if (count == 0) {
+            candidate = num;
+        }
+        count += (num == candidate) ? 1 : -1;
+    }
+    
+    // Phase 2: Verify (optional if guaranteed to exist)
+    count = 0;
+    for (int num : nums) {
+        if (num == candidate) count++;
+    }
+    
+    return (count > nums.size() / 2) ? candidate : -1;
+}
+```
+
+### Example
+
+```
+[2, 2, 1, 1, 1, 2, 2]
+
+num=2: count=0 → candidate=2, count=1
+num=2: count=2
+num=1: count=1
+num=1: count=0
+num=1: count=0 → candidate=1, count=1
+num=2: count=0
+num=2: count=0 → candidate=2, count=1
+
+Candidate: 2
+Verify: 2 appears 4 times > 7/2 ✓
+```
+
+**Time**: O(n) | **Space**: O(1)
+
+---
+
+## Kadane's Algorithm
+
+**Problem**: Find the maximum sum of a contiguous subarray.
+
+### The Intuition
+
+At each position, decide: should I extend the previous subarray or start fresh?
+- If previous sum is negative, starting fresh is better
+- Otherwise, extend
+
+### Implementation
+
+```cpp
+int maxSubarraySum(vector<int>& nums) {
+    int maxSum = nums[0];
+    int currentSum = nums[0];
+    
+    for (int i = 1; i < nums.size(); i++) {
+        // Extend or start fresh
+        currentSum = max(nums[i], currentSum + nums[i]);
+        maxSum = max(maxSum, currentSum);
+    }
+    
+    return maxSum;
+}
+```
+
+### Example
+
+```
+[-2, 1, -3, 4, -1, 2, 1, -5, 4]
+
+i=0: current=-2, max=-2
+i=1: current=max(1, -2+1)=1, max=1
+i=2: current=max(-3, 1-3)=-2, max=1
+i=3: current=max(4, -2+4)=4, max=4
+i=4: current=max(-1, 4-1)=3, max=4
+i=5: current=max(2, 3+2)=5, max=5
+i=6: current=max(1, 5+1)=6, max=6
+i=7: current=max(-5, 6-5)=1, max=6
+i=8: current=max(4, 1+4)=5, max=6
+
+Maximum subarray sum: 6 (subarray [4, -1, 2, 1])
+```
+
+**Time**: O(n) | **Space**: O(1)
+
+---
+
+## Sieve of Eratosthenes
+
+**Problem**: Find all prime numbers up to n.
+
+### The Approach
+
+1. Create a boolean array of size n+1, all set to `true`
+2. Start from 2 (first prime)
+3. Mark all multiples of 2 as `false` (not prime)
+4. Move to next unmarked number, repeat
+5. All remaining `true` values are primes
+
+### Implementation
+
+```cpp
+vector<int> sieveOfEratosthenes(int n) {
+    vector<bool> isPrime(n + 1, true);
+    isPrime[0] = isPrime[1] = false;
+    
+    for (int i = 2; i * i <= n; i++) {
+        if (isPrime[i]) {
+            // Mark all multiples as not prime
+            for (int j = i * i; j <= n; j += i) {
+                isPrime[j] = false;
+            }
+        }
+    }
+    
+    vector<int> primes;
+    for (int i = 2; i <= n; i++) {
+        if (isPrime[i]) primes.push_back(i);
+    }
+    return primes;
+}
+```
+
+### Example (n = 30)
+
+```
+Initial: [T, T, T, T, T, T, T, T, T, T, T, ...]
+          0  1  2  3  4  5  6  7  8  9  10
+
+i=2: Mark 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30
+i=3: Mark 9, 15, 21, 27
+i=5: Mark 25
+
+Primes: 2, 3, 5, 7, 11, 13, 17, 19, 23, 29
+```
+
+**Time**: O(n log log n) | **Space**: O(n)
+
+---
+
+## Euclidean Algorithm (GCD)
+
+**Problem**: Find the Greatest Common Divisor of two numbers.
+
+### The Key Insight
+
+```
+GCD(a, b) = GCD(b, a % b)
+```
+
+Continue until one number becomes 0. The other is the GCD.
+
+### Implementation
+
+```cpp
+int gcd(int a, int b) {
+    while (b != 0) {
+        int temp = b;
+        b = a % b;
+        a = temp;
+    }
+    return a;
+}
+
+// Recursive version
+int gcd(int a, int b) {
+    return b == 0 ? a : gcd(b, a % b);
+}
+```
+
+### Example
+
+```
+GCD(48, 18)
+= GCD(18, 48 % 18) = GCD(18, 12)
+= GCD(12, 18 % 12) = GCD(12, 6)
+= GCD(6, 12 % 6) = GCD(6, 0)
+= 6 ✓
+```
+
+### LCM Relationship
+
+```
+LCM(a, b) × GCD(a, b) = a × b
+LCM(a, b) = (a × b) / GCD(a, b)
+```
+
+**Time**: O(log(min(a, b)))
+
+---
+
+## Floyd's Cycle Detection
+
+**Problem**: Detect if a linked list has a cycle, and find the cycle's starting point.
+
+### The Tortoise and Hare Approach
+
+Use two pointers:
+- **Slow (tortoise)**: moves 1 step at a time
+- **Fast (hare)**: moves 2 steps at a time
+
+If there's a cycle, they will eventually meet inside the cycle.
+
+### Finding the Cycle Start
+
+Once they meet:
+1. Reset slow to head
+2. Move both pointers 1 step at a time
+3. Where they meet is the cycle start
+
+### Implementation
+
+```cpp
+ListNode* detectCycle(ListNode* head) {
+    ListNode *slow = head, *fast = head;
+    
+    // Detect cycle
+    while (fast && fast->next) {
+        slow = slow->next;
+        fast = fast->next->next;
+        
+        if (slow == fast) {
+            // Cycle found — find starting point
+            slow = head;
+            while (slow != fast) {
+                slow = slow->next;
+                fast = fast->next;
+            }
+            return slow;  // Cycle start
+        }
+    }
+    
+    return nullptr;  // No cycle
+}
+```
+
+### Why It Works (Finding Start)
+
+Let's say:
+- Distance from head to cycle start = F
+- Distance from cycle start to meeting point = a
+- Cycle length = C
+
+When they meet: slow traveled F + a, fast traveled F + a + nC
+
+Since fast travels 2× slow's speed:
+```
+2(F + a) = F + a + nC
+F + a = nC
+F = nC - a
+```
+
+So if slow starts from head and fast from meeting point, both moving 1 step, they'll meet at the cycle start after F steps.
+
+**Time**: O(n) | **Space**: O(1)
+
+---
+
+## Two Pointers / Sliding Window
+
+**Problem**: Find subarrays/substrings satisfying certain conditions.
+
+### When to Use
+
+- Contiguous subarray problems
+- Two Sum variants (sorted arrays)
+- String matching with constraints
+- **Key requirement**: All elements non-negative (for sliding window sum problems)
+
+### Fixed-Size Window
+
+```cpp
+// Maximum sum of subarray of size k
+int maxSumWindow(vector<int>& arr, int k) {
+    int windowSum = 0;
+    for (int i = 0; i < k; i++) {
+        windowSum += arr[i];
+    }
+    
+    int maxSum = windowSum;
+    for (int i = k; i < arr.size(); i++) {
+        windowSum += arr[i] - arr[i - k];  // Slide window
+        maxSum = max(maxSum, windowSum);
+    }
+    return maxSum;
+}
+```
+
+### Variable-Size Window (Two Pointers)
+
+```cpp
+// Longest substring with at most k distinct characters
+int longestSubstring(string s, int k) {
+    unordered_map<char, int> freq;
+    int left = 0, maxLen = 0;
+    
+    for (int right = 0; right < s.size(); right++) {
+        freq[s[right]]++;
+        
+        // Shrink window if constraint violated
+        while (freq.size() > k) {
+            freq[s[left]]--;
+            if (freq[s[left]] == 0) freq.erase(s[left]);
+            left++;
+        }
+        
+        maxLen = max(maxLen, right - left + 1);
+    }
+    return maxLen;
+}
+```
+
+---
+
+## Quick Reference: Algorithm Patterns
+
+| Pattern | When to Use |
+|---------|-------------|
+| **Binary Search** | "Minimize the Maximum" or "Maximize the Minimum" |
+| **Prefix Sum** | Subarray sum queries |
+| **Two Pointers** | Sorted array, subarray problems |
+| **Sliding Window** | Fixed or variable size subarrays |
+| **Backtracking** | All permutations, all subsets |
+| **Topological Sort** | Dependencies, course schedule |
+| **Union-Find** | Connected components, cycle detection |

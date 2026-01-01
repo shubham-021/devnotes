@@ -1,0 +1,258 @@
+---
+title: Props & Event Handlers
+description: Understanding prop drilling, the Context API solution, and common event handler pitfalls
+---
+
+## Props
+
+Props are the way React components communicate. A parent passes data to a child through props, and the child receives them as a function parameter.
+
+```jsx
+function Greeting({ name }) {
+  return <h1>Hello, {name}!</h1>;
+}
+
+// Usage
+<Greeting name="Alice" />
+```
+
+Props are read-only. A component should never modify its own props.
+
+---
+
+## Prop Drilling
+
+Prop drilling occurs when you pass data through multiple layers of components, even when intermediate components don't need that data. They simply forward it to the next level.
+
+```jsx
+function App() {
+  const username = "Alice";
+  return <Parent username={username} />;
+}
+
+function Parent({ username }) {
+  return <Child username={username} />;
+}
+
+function Child({ username }) {
+  return <GrandChild username={username} />;
+}
+
+function GrandChild({ username }) {
+  return <h1>Hello, {username}!</h1>;
+}
+```
+
+In this example, only `GrandChild` actually uses `username`. The data flows through:
+
+**App → Parent → Child → GrandChild**
+
+`Parent` and `Child` exist only to relay the prop.
+
+### Why This Becomes a Problem
+
+| Issue | Impact |
+|-------|--------|
+| Cluttered components | Components carry props they never use |
+| Maintenance burden | Renaming or restructuring requires changes at every level |
+| Reduced readability | It's unclear which component actually consumes the data |
+| Tight coupling | Intermediate components become aware of data they shouldn't know about |
+
+---
+
+## The Solution: Context API
+
+The Context API lets you share values across a component tree without manually passing props at every level. Think of it as a way to broadcast data to any component that needs it, regardless of depth.
+
+### Common Use Cases
+
+Context is typically used for:
+
+- **Authentication state** (current user, login status)
+- **Theme preferences** (light/dark mode)
+- **Localization** (language, region settings)
+- **Global configuration** (feature flags, environment settings)
+
+### Creating and Using Context
+
+The Context API workflow has three steps:
+
+**Step 1: Create the Context**
+
+```jsx
+import { createContext } from 'react';
+
+const UserContext = createContext();
+```
+
+This creates a Context object containing a `Provider` component and a way to read values via `useContext`.
+
+**Step 2: Wrap Components with the Provider**
+
+```jsx
+<UserContext.Provider value={"Alice"}>
+  <App />
+</UserContext.Provider>
+```
+
+Every component inside `<App />` can now access `"Alice"` as the context value. Place the Provider at the **lowest common ancestor** of all components that need the value.
+
+**Step 3: Consume with useContext**
+
+```jsx
+import { useContext } from 'react';
+
+function GrandChild() {
+  const username = useContext(UserContext);
+  return <h1>Hello, {username}</h1>;
+}
+```
+
+No prop drilling required. `GrandChild` accesses the value directly.
+
+### Context is Not a Performance Optimization
+
+Context solves code organization, not performance. In fact, it can hurt performance if misused.
+
+When a context value changes, **all components consuming that context re-render**, even if they only use a portion of the value that didn't change.
+
+```jsx
+// If ANY of these values change, ALL consumers re-render
+const value = { user, theme, notifications };
+```
+
+React sees the object as a new reference, triggering re-renders across all consumers.
+
+For detailed solutions to this re-render problem (splitting contexts, memoization, state management libraries), see the [Context & State Management](/docs/react/context-and-state) page.
+
+---
+
+## Event Handler Syntax
+
+A common source of bugs in React is incorrect event handler assignment. Understanding the difference between passing a function and calling a function is essential.
+
+### The Problem: Immediate Execution
+
+```jsx
+// Incorrect
+<button onClick={setCount(count + 1)}>+1</button>
+
+// Correct
+<button onClick={() => setCount(count + 1)}>+1</button>
+```
+
+These look similar but behave very differently.
+
+### What Happens with Incorrect Syntax
+
+When you write `onClick={setCount(count + 1)}`:
+
+1. React evaluates every expression in JSX during render
+2. `setCount(count + 1)` executes immediately
+3. State updates, triggering another render
+4. The cycle repeats, creating an infinite loop
+5. `setCount()` returns `undefined`, so `onClick` ends up as `undefined`
+
+### What Happens with Correct Syntax
+
+When you write `onClick={() => setCount(count + 1)}`:
+
+1. You create a new function that wraps the state update
+2. This function is assigned to `onClick`
+3. The function only executes when the user clicks
+4. No state updates occur during rendering
+
+### Passing Functions vs Calling Functions
+
+| Syntax | What Gets Assigned | When Code Runs |
+|--------|-------------------|----------------|
+| `onClick={handleClick}` | The function itself | On click |
+| `onClick={handleClick()}` | Return value of the function | During render |
+| `onClick={() => handleClick()}` | A new function | On click |
+
+### When to Use Each Pattern
+
+**Direct reference: `{functionName}`**
+
+Use when passing a pre-defined handler that takes no arguments or uses the event object:
+
+```jsx
+function handleClick() {
+  console.log("Clicked!");
+}
+
+<button onClick={handleClick}>Click me</button>
+```
+
+**Arrow function: `{() => expression}`**
+
+Use when you need to:
+- Pass arguments to the handler
+- Call a function that would otherwise execute immediately
+- Combine multiple statements
+
+```jsx
+const [count, setCount] = useState(0);
+
+// Passing an argument
+<button onClick={() => setCount(count + 1)}>+1</button>
+
+// Multiple operations
+<button onClick={() => {
+  logClick();
+  setCount(count + 1);
+}}>
+  +1
+</button>
+```
+
+### Common Mistake Examples
+
+```jsx
+// Wrong: Executes immediately
+<button onClick={console.log("clicked")}>Log</button>
+
+// Correct: Executes on click
+<button onClick={() => console.log("clicked")}>Log</button>
+```
+
+```jsx
+// Wrong: handleDelete(id) runs during render
+<button onClick={handleDelete(id)}>Delete</button>
+
+// Correct: Wrapped in arrow function
+<button onClick={() => handleDelete(id)}>Delete</button>
+```
+
+---
+
+## Quick Reference
+
+### Props
+
+- Passed from parent to child
+- Read-only within the receiving component
+- Prop drilling occurs when passing through unnecessary intermediate components
+
+### Context API
+
+```jsx
+// Create
+const MyContext = createContext();
+
+// Provide
+<MyContext.Provider value={data}>
+  <App />
+</MyContext.Provider>
+
+// Consume
+const data = useContext(MyContext);
+```
+
+### Event Handlers
+
+| Pattern | Use Case |
+|---------|----------|
+| `onClick={fn}` | Pre-defined handler, no arguments |
+| `onClick={() => fn()}` | Need to pass arguments or prevent immediate execution |
+| `onClick={() => fn(arg)}` | Passing data to the handler |

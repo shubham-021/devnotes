@@ -1,0 +1,315 @@
+---
+title: Sorting Algorithms
+description: Understanding core sorting algorithms and their complexities
+---
+
+## Selection Sort
+
+**Idea**: Find the minimum element and swap it to the front. Repeat for the remaining array.
+
+### How It Works
+
+1. Find the minimum element in the unsorted portion
+2. Swap it with the first unsorted element
+3. Move the boundary between sorted/unsorted forward
+4. Repeat until the entire array is sorted
+
+### Example
+
+```
+[64, 25, 12, 22, 11]
+ ↓   Find min (11), swap with first
+[11, 25, 12, 22, 64]
+     ↓   Find min (12), swap with second
+[11, 12, 25, 22, 64]
+         ↓   Find min (22), swap with third
+[11, 12, 22, 25, 64]
+             ↓   Already in place
+[11, 12, 22, 25, 64] ✓
+```
+
+### Implementation
+
+```cpp
+void selectionSort(int arr[], int n) {
+    for (int i = 0; i < n - 1; i++) {
+        int minIdx = i;
+        for (int j = i + 1; j < n; j++) {
+            if (arr[j] < arr[minIdx]) {
+                minIdx = j;
+            }
+        }
+        swap(arr[i], arr[minIdx]);
+    }
+}
+```
+
+### Complexity
+
+| Case | Time |
+|------|------|
+| Best | O(n²) |
+| Average | O(n²) |
+| Worst | O(n²) |
+
+Always O(n²) because it always scans the entire unsorted portion.
+
+---
+
+## Bubble Sort
+
+**Idea**: Repeatedly swap adjacent elements if they're in the wrong order, "bubbling" the largest element to the end.
+
+### How It Works
+
+1. Compare adjacent elements
+2. Swap if left > right
+3. After one pass, the largest element is at the end
+4. Repeat for remaining elements
+
+### Example
+
+```
+[5, 3, 8, 4, 2]
+ ↓ ↓
+[3, 5, 8, 4, 2]  (5 > 3, swap)
+    ↓ ↓
+[3, 5, 8, 4, 2]  (5 < 8, no swap)
+       ↓ ↓
+[3, 5, 4, 8, 2]  (8 > 4, swap)
+          ↓ ↓
+[3, 5, 4, 2, 8]  (8 > 2, swap) → 8 is now in place
+...continue for remaining elements
+```
+
+### Implementation (Optimized)
+
+```cpp
+void bubbleSort(int arr[], int n) {
+    for (int i = 0; i < n - 1; i++) {
+        bool swapped = false;  // Optimization flag
+        for (int j = 0; j < n - 1 - i; j++) {
+            if (arr[j] > arr[j + 1]) {
+                swap(arr[j], arr[j + 1]);
+                swapped = true;
+            }
+        }
+        if (!swapped) break;  // Already sorted
+    }
+}
+```
+
+### Complexity
+
+| Case | Time | Condition |
+|------|------|-----------|
+| Best | O(n) | Already sorted (with flag) |
+| Average | O(n²) | |
+| Worst | O(n²) | Reverse sorted |
+
+---
+
+## Insertion Sort
+
+**Idea**: Take each element and insert it into its correct position in the already-sorted portion.
+
+### How It Works
+
+1. Start with the second element
+2. Compare it with elements to its left
+3. Shift larger elements right
+4. Insert the element in its correct position
+5. Repeat for all elements
+
+### Example
+
+```
+[5, 3, 8, 4, 2]
+    ↓   Take 3, compare with 5
+[5, 5, 8, 4, 2]  Shift 5 right
+[3, 5, 8, 4, 2]  Insert 3
+       ↓   Take 8, already in place
+[3, 5, 8, 4, 2]
+          ↓   Take 4, compare with 8, 5
+[3, 5, 8, 8, 2]  Shift 8
+[3, 5, 5, 8, 2]  Shift 5
+[3, 4, 5, 8, 2]  Insert 4
+             ↓   Take 2, shift all, insert at front
+[2, 3, 4, 5, 8] ✓
+```
+
+### Implementation
+
+```cpp
+void insertionSort(int arr[], int n) {
+    for (int i = 1; i < n; i++) {
+        int key = arr[i];
+        int j = i - 1;
+        while (j >= 0 && arr[j] > key) {
+            arr[j + 1] = arr[j];  // Shift right
+            j--;
+        }
+        arr[j + 1] = key;  // Insert
+    }
+}
+```
+
+### Complexity
+
+| Case | Time | Condition |
+|------|------|-----------|
+| Best | O(n) | Already sorted |
+| Average | O(n²) | |
+| Worst | O(n²) | Reverse sorted |
+
+---
+
+## Merge Sort
+
+**Idea**: Divide the array into halves, sort each half, then merge them. Uses divide-and-conquer.
+
+### How It Works
+
+1. **Divide**: Split the array into two halves
+2. **Conquer**: Recursively sort each half
+3. **Merge**: Combine the sorted halves into one sorted array
+
+### Example
+
+```
+[38, 27, 43, 3, 9, 82, 10]
+        ↓ Divide
+[38, 27, 43, 3]    [9, 82, 10]
+    ↓ Divide           ↓ Divide
+[38, 27] [43, 3]   [9, 82] [10]
+   ↓        ↓         ↓      ↓
+[38][27] [43][3]   [9][82]  [10]
+   ↓ Merge   ↓        ↓ Merge
+[27, 38] [3, 43]   [9, 82]  [10]
+    ↓ Merge            ↓ Merge
+[3, 27, 38, 43]    [9, 10, 82]
+        ↓ Merge
+[3, 9, 10, 27, 38, 43, 82] ✓
+```
+
+### Implementation
+
+```cpp
+void merge(int arr[], int left, int mid, int right) {
+    int n1 = mid - left + 1;
+    int n2 = right - mid;
+    
+    vector<int> L(n1), R(n2);
+    
+    for (int i = 0; i < n1; i++) L[i] = arr[left + i];
+    for (int i = 0; i < n2; i++) R[i] = arr[mid + 1 + i];
+    
+    int i = 0, j = 0, k = left;
+    
+    while (i < n1 && j < n2) {
+        if (L[i] <= R[j]) arr[k++] = L[i++];
+        else arr[k++] = R[j++];
+    }
+    
+    while (i < n1) arr[k++] = L[i++];
+    while (j < n2) arr[k++] = R[j++];
+}
+
+void mergeSort(int arr[], int left, int right) {
+    if (left >= right) return;
+    
+    int mid = left + (right - left) / 2;
+    mergeSort(arr, left, mid);
+    mergeSort(arr, mid + 1, right);
+    merge(arr, left, mid, right);
+}
+```
+
+### Complexity
+
+| Case | Time | Space |
+|------|------|-------|
+| All cases | O(n log n) | O(n) |
+
+- **Merge function**: O(n) — traverses all elements once
+- **Recursive splits**: O(log n) — halving each time
+- **Total**: O(n log n)
+- **Space**: O(n) — needs auxiliary array for merging
+
+---
+
+## Quick Sort
+
+**Idea**: Pick a pivot element, partition the array so elements smaller than pivot are on the left, larger on the right. Recursively sort partitions.
+
+### How It Works
+
+1. **Choose pivot**: Usually first, last, or random element
+2. **Partition**: Rearrange so all elements < pivot are left, all > pivot are right
+3. **Recurse**: Sort left and right partitions
+
+### Example (Last element as pivot)
+
+```
+[10, 7, 8, 9, 1, 5]  pivot = 5
+           ↓ Partition
+[1, 5, 8, 9, 10, 7]  Elements ≤5 on left
+ ↓     ↓
+ L     pivot in correct position
+       
+[1] [5] [8, 9, 10, 7]  Recurse on each side
+            ↓ Partition (pivot = 7)
+[1] [5] [7, 9, 10, 8]
+...continue recursively
+[1, 5, 7, 8, 9, 10] ✓
+```
+
+### Implementation
+
+```cpp
+int partition(int arr[], int low, int high) {
+    int pivot = arr[high];
+    int i = low - 1;  // Index of smaller element
+    
+    for (int j = low; j < high; j++) {
+        if (arr[j] < pivot) {
+            i++;
+            swap(arr[i], arr[j]);
+        }
+    }
+    swap(arr[i + 1], arr[high]);
+    return i + 1;
+}
+
+void quickSort(int arr[], int low, int high) {
+    if (low < high) {
+        int pi = partition(arr, low, high);
+        quickSort(arr, low, pi - 1);
+        quickSort(arr, pi + 1, high);
+    }
+}
+```
+
+### Complexity
+
+| Case | Time | Condition |
+|------|------|-----------|
+| Best | O(n log n) | Balanced partitions |
+| Average | O(n log n) | |
+| Worst | O(n²) | Already sorted (with bad pivot) |
+
+**Space**: O(1) — in-place sorting (excluding recursion stack)
+
+---
+
+## Comparison
+
+| Algorithm | Best | Average | Worst | Space | Stable |
+|-----------|------|---------|-------|-------|--------|
+| Selection | O(n²) | O(n²) | O(n²) | O(1) | No |
+| Bubble | O(n) | O(n²) | O(n²) | O(1) | Yes |
+| Insertion | O(n) | O(n²) | O(n²) | O(1) | Yes |
+| Merge | O(n log n) | O(n log n) | O(n log n) | O(n) | Yes |
+| Quick | O(n log n) | O(n log n) | O(n²) | O(1) | No |
+
+**Stable sort**: Equal elements maintain their relative order.

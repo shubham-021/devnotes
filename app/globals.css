@@ -321,3 +321,14 @@ body {
   background-color: #fdfbf7;
   color: #3d3629;
 }
+
+/* Copy button visibility */
+@media (min-width: 1024px) {
+  .group button.copy-button {
+    opacity: 0;
+  }
+
+  .group:hover button.copy-button {
+    opacity: 1;
+  }
+}

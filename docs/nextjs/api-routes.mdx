@@ -1,0 +1,204 @@
+---
+title: API Routes
+description: Building backend endpoints in Next.js
+---
+
+## API Routes Overview
+
+Next.js lets you create API endpoints alongside your frontend code. No separate backend project needed.
+
+API routes live in the `app/api` directory and use a file called `route.ts`. For example, `app/api/users/route.ts` creates the endpoint `/api/users`.
+
+---
+
+## Creating an API Route
+
+```tsx
+// app/api/user/route.ts
+export async function GET() {
+  // Database logic would go here
+  return Response.json({
+    username: "shubham",
+    email: "shubham@gmail.com"
+  })
+}
+```
+
+This creates a `GET /api/user` endpoint that returns JSON.
+
+### Supported HTTP Methods
+
+```tsx
+// app/api/users/route.ts
+export async function GET(request: Request) {
+  // Handle GET requests
+}
+
+export async function POST(request: Request) {
+  // Handle POST requests
+}
+
+export async function PUT(request: Request) {
+  // Handle PUT requests
+}
+
+export async function DELETE(request: Request) {
+  // Handle DELETE requests
+}
+```
+
+---
+
+## Reading Request Data
+
+### Query Parameters
+
+```tsx
+// GET /api/users?role=admin
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const role = searchParams.get('role') // "admin"
+  
+  return Response.json({ role })
+}
+```
+
+### Request Body
+
+```tsx
+export async function POST(request: Request) {
+  const body = await request.json()
+  
+  // Validate and process body
+  const { name, email } = body
+  
+  return Response.json({ 
+    message: "User created",
+    user: { name, email }
+  })
+}
+```
+
+### Headers
+
+```tsx
+export async function GET(request: Request) {
+  const authHeader = request.headers.get('authorization')
+  
+  if (!authHeader) {
+    return Response.json(
+      { error: "Unauthorized" },
+      { status: 401 }
+    )
+  }
+  
+  return Response.json({ authenticated: true })
+}
+```
+
+---
+
+## Dynamic API Routes
+
+Use `[brackets]` for dynamic segments. For example, `app/api/users/[id]/route.ts` creates the endpoint `/api/users/:id`.
+
+```tsx
+// app/api/users/[id]/route.ts
+export async function GET(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  const userId = params.id
+  
+  // Fetch user from database
+  const user = await db.user.findUnique({ where: { id: userId } })
+  
+  if (!user) {
+    return Response.json(
+      { error: "User not found" },
+      { status: 404 }
+    )
+  }
+  
+  return Response.json(user)
+}
+```
+
+---
+
+## Calling API Routes from Components
+
+### From a Server Component
+
+```tsx
+// app/page.tsx
+async function getUserDetails() {
+  try {
+    const response = await fetch("http://localhost:3000/api/user")
+    return response.json()
+  } catch (error) {
+    console.error(error)
+  }
+}
+
+export default async function Home() {
+  const user = await getUserDetails()
+  
+  return (
+    <div>
+      <p>Username: {user.username}</p>
+      <p>Email: {user.email}</p>
+    </div>
+  )
+}
+```
+
+### From a Client Component
+
+```tsx
+"use client"
+
+import { useEffect, useState } from 'react'
+
+export default function UserProfile() {
+  const [user, setUser] = useState(null)
+  
+  useEffect(() => {
+    fetch('/api/user')
+      .then(res => res.json())
+      .then(data => setUser(data))
+  }, [])
+  
+  if (!user) return <div>Loading...</div>
+  
+  return <div>Welcome, {user.username}</div>
+}
+```
+
+---
+
+## Response Helpers
+
+```tsx
+// JSON response
+return Response.json({ data: "value" })
+
+// With status code
+return Response.json(
+  { error: "Not found" },
+  { status: 404 }
+)
+
+// With headers
+return Response.json(
+  { data: "value" },
+  { 
+    headers: { 
+      'Cache-Control': 'max-age=3600' 
+    } 
+  }
+)
+
+// Redirect
+return Response.redirect(new URL('/login', request.url))
+```

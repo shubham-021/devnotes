@@ -1,0 +1,345 @@
+---
+title: Getting Started
+description: Understanding monorepos, why they matter, and how orchestrators help you scale
+---
+
+## What is a Monorepo?
+
+A **monorepo** (monolithic repository) is simply a single Git repository that contains multiple projects — frontend, backend, shared libraries, CLI tools, and more.
+
+```
+my-company/
+  apps/
+    web/              # Next.js frontend
+    api/              # Express backend
+    admin/            # Admin dashboard
+  packages/
+    ui/               # Shared component library
+    utils/            # Helper functions
+    types/            # Shared TypeScript types
+  package.json
+  turbo.json
+```
+
+That's it. Even without special tooling, this structure is a monorepo.
+
+But as your codebase grows, you'll need tools to manage it efficiently. That's where **monorepo orchestrators** come in.
+
+---
+
+## Monorepo vs Polyrepo
+
+### Polyrepo (Multiple Repositories)
+
+Each project lives in its own repository:
+
+```
+github.com/company/frontend
+github.com/company/backend
+github.com/company/shared-ui
+github.com/company/utils
+```
+
+**Challenges:**
+- Sharing code requires publishing packages to npm
+- Version mismatches between projects
+- Cross-project refactoring requires multiple PRs
+- Difficult to ensure consistent tooling
+
+### Monorepo (Single Repository)
+
+All projects live together:
+
+```
+github.com/company/monorepo
+  apps/frontend
+  apps/backend
+  packages/shared-ui
+  packages/utils
+```
+
+**Advantages:**
+- Direct imports between projects
+- Atomic changes across multiple projects
+- Single source of truth for tooling
+- Easier dependency management
+
+---
+
+## Why Use a Monorepo?
+
+| Benefit | Description |
+|---------|-------------|
+| **Centralized Codebase** | All code in one place — easy to discover, share, and reuse |
+| **Atomic Changes** | One commit can update frontend, backend, and shared libraries together |
+| **Consistent Tooling** | Same ESLint, TypeScript, and build configs for all projects |
+| **Simplified Dependencies** | No version mismatches between your own packages |
+| **Better CI/CD** | Single pipeline that understands the entire codebase |
+| **Easier Refactoring** | Rename a function and update all usages in one PR |
+| **Team Visibility** | Everyone can see how other teams' code works |
+
+---
+
+## What is a Monorepo Orchestrator?
+
+A monorepo alone is just a folder structure. As it grows, you'll face problems:
+
+- Building everything takes forever
+- Tests run even when nothing changed
+- Imports between packages get messy
+- CI wastes time on unaffected projects
+
+**Orchestrators** solve these problems. Popular options include:
+
+| Tool | Strengths |
+|------|-----------|
+| **Turborepo** | Fast, simple, great caching, Vercel-backed |
+| **Nx** | Feature-rich, plugin ecosystem, great for enterprise |
+| **Lerna** | Legacy tool, good for npm publishing |
+| **Bazel** | Google-scale, language-agnostic, steep learning curve |
+
+### What Orchestrators Do
+
+| Feature | Without Orchestrator | With Orchestrator |
+|---------|---------------------|-------------------|
+| **Dependency Graph** | You track it manually | Automatically understood |
+| **Builds** | Build everything every time | Only build what changed |
+| **Caching** | None | Remembers past builds, skips identical work |
+| **Execution** | Sequential | Parallel where possible |
+| **Import Paths** | `../../shared/utils` | `@repo/utils` |
+| **Tooling** | Configure each project separately | Shared configs across all projects |
+
+---
+
+## Monorepos and CI/CD
+
+In a monorepo, the key question is: **"What should CI build when something changes?"**
+
+### Without Smart CI
+
+Every push builds and tests everything:
+
+```bash
+npm run build --workspace=frontend
+npm run build --workspace=backend
+npm run build --workspace=admin
+npm run test --workspace=shared-ui
+# ... everything, every time
+```
+
+Even if you only changed a typo in the frontend README, CI runs tests for the entire monorepo.
+
+**Result:** Slow, expensive, wasteful.
+
+### With Smart CI (Orchestrator + CI)
+
+The orchestrator tracks the dependency graph and tells CI what actually changed:
+
+```bash
+# Turborepo figures out:
+# "Only frontend and shared-ui changed"
+
+turbo run build test --filter=...[origin/main]
+```
+
+Only affected projects are built and tested.
+
+**Result:** Fast, efficient, cost-effective.
+
+### Example
+
+Your monorepo structure:
+
+```
+apps/
+  frontend           # Uses shared-ui
+  backend            # Uses shared-types
+  admin              # Uses shared-ui, shared-types
+packages/
+  shared-ui
+  shared-types
+```
+
+You push a change to `packages/shared-ui/button.tsx`.
+
+| Approach | What Runs |
+|----------|-----------|
+| **Naive CI** | Build and test everything (5 projects) |
+| **Smart CI** | Build and test `frontend` and `admin` only (2 projects) |
+
+The orchestrator knows that `backend` doesn't use `shared-ui`, so it's skipped.
+
+### Setting Up Smart CI
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for affected detection
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      # Only build/test what changed since main
+      - run: npx turbo run build test --filter=...[origin/main]
+```
+
+---
+
+## Project Setup
+
+### Quick Start with Turborepo
+
+```bash
+npx create-turbo@latest
+```
+
+This scaffolds a complete monorepo with:
+- Example apps and packages
+- Shared TypeScript and ESLint configs
+- Pre-configured `turbo.json`
+- Workspace setup (npm/pnpm/yarn)
+
+### Manual Setup
+
+1. **Initialize the repository:**
+
+```bash
+mkdir my-monorepo && cd my-monorepo
+npm init -y
+```
+
+2. **Configure workspaces** in `package.json`:
+
+```json
+{
+  "name": "my-monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}
+```
+
+3. **Create the folder structure:**
+
+```bash
+mkdir -p apps/web packages/ui packages/utils
+```
+
+4. **Add Turborepo:**
+
+```bash
+npm install turbo --save-dev
+```
+
+5. **Create `turbo.json`:**
+
+```json
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {},
+    "test": {}
+  }
+}
+```
+
+---
+
+## Practical Tips
+
+### Clean Import Paths
+
+Instead of relative path hell:
+
+```typescript
+import { Button } from '../../../packages/ui/src/button'
+```
+
+Use package names:
+
+```typescript
+import { Button } from '@repo/ui'
+```
+
+This works because each package has its own `package.json` with a proper name:
+
+```json
+{
+  "name": "@repo/ui",
+  "main": "./src/index.ts"
+}
+```
+
+### TypeScript Compilation
+
+Standard `tsc` struggles with cross-package imports in monorepos. Use bundlers instead:
+
+| Tool | Best For |
+|------|----------|
+| **tsup** | Libraries, simple packages |
+| **esbuild** | Fast builds, simple bundling |
+| **Vite** | Applications with dev server |
+| **Next.js** | Full-stack React apps |
+
+Example with esbuild:
+
+```bash
+esbuild ./src/index.ts --bundle --platform=node --outfile=dist/index.js
+```
+
+Example with tsup (recommended for packages):
+
+```bash
+npx tsup src/index.ts --format cjs,esm --dts
+```
+
+### Explore Examples
+
+The Turborepo GitHub repository has excellent examples for various setups:
+
+- Next.js + React
+- Vite + Vue
+- Express + React
+- Kitchen sink (everything)
+
+Browse them at: [github.com/vercel/turborepo/tree/main/examples](https://github.com/vercel/turbo/tree/main/examples)
+
+---
+
+## Quick Reference
+
+| Term | Meaning |
+|------|---------|
+| **Monorepo** | Single repo containing multiple projects |
+| **Polyrepo** | Each project in its own repository |
+| **Workspace** | A single package within the monorepo |
+| **Orchestrator** | Tool that manages monorepo builds (Turborepo, Nx) |
+| **Dependency Graph** | Map of which packages depend on which |
+| **Affected** | Projects that changed or depend on changes |

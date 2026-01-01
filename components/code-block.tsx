@@ -41,8 +41,7 @@ export function CodeBlock({ children, className, ...props }: CodeBlockProps) {
             <button
                 onClick={handleCopy}
                 className={cn(
-                    "absolute top-2 right-2 p-2 rounded-md transition-all duration-200 cursor-pointer",
-                    "opacity-0 group-hover:opacity-100",
+                    "copy-button absolute top-2 right-2 p-2 rounded-md transition-all duration-200 cursor-pointer",
                     // Dark mode styles (default)
                     "bg-zinc-700/80 border border-zinc-600 text-zinc-300",
                     "hover:bg-zinc-600 hover:text-white",
@@ -52,9 +51,9 @@ export function CodeBlock({ children, className, ...props }: CodeBlockProps) {
                 aria-label={copied ? "Copied!" : "Copy code"}
             >
                 {copied ? (
-                    <Check className="w-4 h-4" />
+                    <Check className="md:size-4 size-3" />
                 ) : (
-                    <Copy className="w-4 h-4" />
+                    <Copy className="md:size-4 size-3" />
                 )}
             </button>
         </div>

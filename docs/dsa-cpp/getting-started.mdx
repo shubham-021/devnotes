@@ -1,0 +1,107 @@
+---
+title: Getting Started
+description: Setting up C++ for competitive programming and DSA
+---
+
+## The bits/stdc++.h Problem
+
+The `#include <bits/stdc++.h>` header is popular in competitive programming but causes errors on macOS.
+
+### Why It Fails
+
+1. **GCC-specific** — This header is a GCC convenience that includes most standard library headers. It's not part of the C++ standard.
+2. **macOS uses Clang** — Apple's default compiler is Clang/LLVM, which doesn't provide this header.
+3. **Non-portable** — Code using this header won't compile on all systems.
+
+### Solutions
+
+**Option 1: Include headers individually (Recommended)**
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <string>
+#include <algorithm>
+#include <map>
+#include <set>
+#include <queue>
+#include <stack>
+```
+
+This is explicit, portable, and makes dependencies clear.
+
+**Option 2: Install GCC via Homebrew**
+
+```bash
+brew install gcc
+g++-14 your_file.cpp -o output  # version may vary
+```
+
+**Option 3: Create your own convenience header**
+
+Create a file called `stdc++.h` in your project:
+
+```cpp
+// stdc++.h
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <map>
+#include <set>
+#include <queue>
+#include <stack>
+#include <string>
+#include <cmath>
+#include <climits>
+```
+
+Include it with quotes: `#include "stdc++.h"`
+
+---
+
+## Competitive Programming Setup
+
+### Fast I/O
+
+```cpp
+ios_base::sync_with_stdio(false);
+cin.tie(NULL);
+```
+
+This disables synchronization between C and C++ I/O streams, significantly speeding up input/output.
+
+### Common Shortcuts
+
+```cpp
+#define ll long long
+#define pb push_back
+#define all(x) x.begin(), x.end()
+#define vi vector<int>
+```
+
+---
+
+## Memory Limits for Arrays
+
+Understanding stack vs heap allocation is critical for large arrays:
+
+| Declaration | Local (Stack) | Global (Heap) |
+|-------------|---------------|---------------|
+| `int arr[]` | Max ~10⁶ | Max ~10⁷ |
+| `bool arr[]` | Max ~10⁷ | Max ~10⁸ |
+
+For larger sizes (10⁸+), use STL containers like `vector` or `map`.
+
+```cpp
+// This will crash (stack overflow)
+int main() {
+    int arr[100000000]; // Too large for stack
+}
+
+// This works (heap allocation)
+int arr[100000000]; // Global - uses heap
+
+int main() {
+    vector<int> v(100000000); // STL uses heap
+}
+```

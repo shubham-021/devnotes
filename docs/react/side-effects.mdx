@@ -1,0 +1,352 @@
+---
+title: Side Effects
+description: Understanding side effects in React and managing them with useEffect
+---
+
+## What Are Side Effects?
+
+**Side effects** are operations that affect something outside the scope of the current function — things that can't be part of the render process itself.
+
+React components should be "pure" with respect to rendering: given the same props and state, they should return the same JSX. Side effects break this purity, so they need special handling.
+
+### Common Side Effects
+
+| Side Effect | Example |
+|-------------|---------|
+| **Data fetching** | Calling an API |
+| **Subscriptions** | WebSocket connections, event listeners |
+| **DOM manipulation** | Focusing an input, measuring elements |
+| **Timers** | setTimeout, setInterval |
+| **Storage** | localStorage, sessionStorage |
+| **Logging** | Analytics, console logs |
+
+---
+
+## Managing Side Effects with useEffect
+
+The `useEffect` hook lets you perform side effects in function components:
+
+```jsx
+import { useEffect } from 'react';
+
+useEffect(() => {
+  // Side effect code runs here
+  
+  return () => {
+    // Cleanup code (optional)
+  };
+}, [dependencies]);
+```
+
+### The Three Parts
+
+| Part | Purpose |
+|------|---------|
+| **Effect function** | The code to run |
+| **Cleanup function** | Undo the effect (optional) |
+| **Dependency array** | When to re-run the effect |
+
+---
+
+## Dependency Array Patterns
+
+### Run on Every Render
+
+```jsx
+useEffect(() => {
+  console.log('Runs after every render');
+});
+// No dependency array = runs every time
+```
+
+### Run Once on Mount
+
+```jsx
+useEffect(() => {
+  console.log('Runs once when component mounts');
+}, []);
+// Empty array = only on mount
+```
+
+### Run When Dependencies Change
+
+```jsx
+useEffect(() => {
+  console.log(`User changed to: ${userId}`);
+  fetchUserData(userId);
+}, [userId]);
+// Runs when userId changes
+```
+
+---
+
+## Cleanup Functions
+
+Many side effects need cleanup to prevent memory leaks or stale behavior:
+
+### Subscriptions
+
+```jsx
+useEffect(() => {
+  const subscription = api.subscribe(data => {
+    setData(data);
+  });
+  
+  return () => {
+    subscription.unsubscribe();
+  };
+}, []);
+```
+
+### Event Listeners
+
+```jsx
+useEffect(() => {
+  function handleResize() {
+    setWindowWidth(window.innerWidth);
+  }
+  
+  window.addEventListener('resize', handleResize);
+  
+  return () => {
+    window.removeEventListener('resize', handleResize);
+  };
+}, []);
+```
+
+### Timers
+
+```jsx
+useEffect(() => {
+  const intervalId = setInterval(() => {
+    setSeconds(prev => prev + 1);
+  }, 1000);
+  
+  return () => {
+    clearInterval(intervalId);
+  };
+}, []);
+```
+
+---
+
+## Data Fetching
+
+A common use case for useEffect:
+
+```jsx
+function UserProfile({ userId }) {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  useEffect(() => {
+    let cancelled = false;
+    
+    async function fetchUser() {
+      setLoading(true);
+      setError(null);
+      
+      try {
+        const response = await fetch(`/api/users/${userId}`);
+        const data = await response.json();
+        
+        if (!cancelled) {
+          setUser(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+    
+    fetchUser();
+    
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+  
+  if (loading) return <p>Loading...</p>;
+  if (error) return <p>Error: {error}</p>;
+  return <div>{user.name}</div>;
+}
+```
+
+### Why the `cancelled` Flag?
+
+When `userId` changes rapidly, old fetch requests might complete after new ones. The `cancelled` flag prevents stale data from updating state.
+
+---
+
+## Effect Timing
+
+Effects run **after** the browser paints:
+
+```
+Component renders
+       ↓
+React updates DOM
+       ↓
+Browser paints screen
+       ↓
+useEffect runs
+```
+
+This ensures effects don't block visual updates.
+
+### useLayoutEffect
+
+For effects that must run **before** paint (rare):
+
+```jsx
+import { useLayoutEffect } from 'react';
+
+useLayoutEffect(() => {
+  // Runs before browser paints
+  // Use for DOM measurements or synchronous visual updates
+}, []);
+```
+
+---
+
+## Why Effects Need Special Handling
+
+### 1. Rendering Must Be Pure
+
+```jsx
+// Wrong: Side effect during render
+function Component() {
+  fetch('/api/data'); // Don't do this!
+  localStorage.setItem('key', 'value'); // Don't do this!
+  return <div>...</div>;
+}
+
+// Correct: Side effect in useEffect
+function Component() {
+  useEffect(() => {
+    fetch('/api/data');
+    localStorage.setItem('key', 'value');
+  }, []);
+  return <div>...</div>;
+}
+```
+
+### 2. Timing Matters
+
+Effects often need to run **after** render is complete:
+
+```jsx
+useEffect(() => {
+  // DOM is ready, we can measure elements
+  const height = ref.current.offsetHeight;
+}, []);
+```
+
+### 3. Cleanup Prevents Leaks
+
+```jsx
+useEffect(() => {
+  const connection = createConnection();
+  connection.connect();
+  
+  return () => {
+    connection.disconnect(); // Prevent memory leak
+  };
+}, []);
+```
+
+### 4. Performance Optimization
+
+Not every effect needs to run on every render:
+
+```jsx
+// Wrong: Fetches on every render
+useEffect(() => {
+  fetchData();
+});
+
+// Correct: Fetches only when needed
+useEffect(() => {
+  fetchData();
+}, [userId]); // Only when userId changes
+```
+
+---
+
+## Common Mistakes
+
+### Missing Dependencies
+
+```jsx
+// Wrong: Effect uses count but doesn't list it
+useEffect(() => {
+  const id = setInterval(() => {
+    setCount(count + 1); // Stale closure!
+  }, 1000);
+  return () => clearInterval(id);
+}, []); // count is missing
+
+// Correct: Use functional update
+useEffect(() => {
+  const id = setInterval(() => {
+    setCount(prev => prev + 1); // Always current
+  }, 1000);
+  return () => clearInterval(id);
+}, []);
+```
+
+### Infinite Loops
+
+```jsx
+// Wrong: Creates new object every render
+useEffect(() => {
+  fetchData(options);
+}, [options]); // options = { page: 1 } recreated each render
+
+// Correct: Memoize or use primitive values
+const page = options.page;
+useEffect(() => {
+  fetchData({ page });
+}, [page]);
+```
+
+---
+
+## Quick Reference
+
+```jsx
+// Run once on mount
+useEffect(() => {
+  // Setup
+  return () => { /* Cleanup */ };
+}, []);
+
+// Run when dependency changes
+useEffect(() => {
+  // Effect using dep
+}, [dep]);
+
+// Run on every render (rare)
+useEffect(() => {
+  // Runs after every render
+});
+
+// Async data fetching
+useEffect(() => {
+  let cancelled = false;
+  
+  async function load() {
+    const data = await fetchData();
+    if (!cancelled) setData(data);
+  }
+  
+  load();
+  return () => { cancelled = true; };
+}, []);
+```

@@ -1,0 +1,127 @@
+---
+title: Hydration
+description: How React brings server-rendered HTML to life
+---
+
+## What is Hydration?
+
+Hydration is the process where React takes static HTML from the server and makes it **interactive** by attaching event listeners and restoring component state.
+
+Think of it as bringing a static page to life:
+
+1. **Server sends HTML** — A complete, rendered page (like a dried shell)
+2. **JavaScript loads** — React code arrives in the browser
+3. **Hydration occurs** — React attaches handlers, sets up state (pours water into the shell)
+
+---
+
+## The Hydration Process
+
+When hydration happens:
+
+1. React recognizes the existing HTML in the DOM
+2. It builds the same component tree in memory
+3. It attaches event handlers to existing elements
+4. It sets up state management for interactive components
+5. It does **not** re-render from scratch (that would cause a flash)
+
+### On the Server
+
+1. React renders components and generates HTML
+2. Server sends complete HTML (e.g., `<button>Count: 0</button>`)
+
+### In the Browser
+
+1. Browser displays HTML immediately (fast first paint)
+2. JavaScript bundles download
+3. React hydrates: attaches `onClick` to the button
+4. Button is now interactive
+
+---
+
+## Why Hydration Matters
+
+Hydration provides the best of both worlds:
+
+| Benefit | How |
+|---------|-----|
+| **Fast initial load** | Browser displays HTML immediately |
+| **SEO-friendly** | Search engines see complete content |
+| **Full interactivity** | JavaScript enables clicks, forms, etc. |
+| **No content flash** | Seamless transition to interactive state |
+
+Without hydration, you'd have to choose:
+- Static HTML only (no interactivity), or
+- Client-side rendering (slow initial load, poor SEO)
+
+---
+
+## Hydration and Component Types
+
+In Next.js with Server Components:
+
+| Component Type | Needs Hydration? |
+|----------------|------------------|
+| Server Components | No — they're static HTML |
+| Client Components | Yes — they have state/handlers |
+
+Only components marked with `"use client"` need hydration because they contain:
+- React hooks (`useState`, `useEffect`)
+- Event handlers (`onClick`, `onChange`)
+- Browser APIs
+
+Server Components are pure HTML — no JavaScript, no hydration needed.
+
+---
+
+## Hydration Errors
+
+Hydration errors occur when server-rendered HTML doesn't match what React expects on the client.
+
+### Common Causes
+
+```tsx
+// ❌ Using browser-only values during render
+export default function Time() {
+  return <p>Current time: {new Date().toLocaleTimeString()}</p>
+}
+```
+
+The time on the server differs from the time on the client, causing a mismatch.
+
+### Fixes
+
+```tsx
+"use client"
+
+import { useState, useEffect } from 'react'
+
+export default function Time() {
+  const [time, setTime] = useState<string>()
+  
+  useEffect(() => {
+    // Only runs on client
+    setTime(new Date().toLocaleTimeString())
+  }, [])
+  
+  return <p>Current time: {time ?? 'Loading...'}</p>
+}
+```
+
+### Other Common Mismatches
+
+- Using `Math.random()` during render
+- Accessing `window` or `localStorage` without `useEffect`
+- Third-party scripts modifying the DOM
+- Browser extensions inserting elements
+
+---
+
+## Quick Reference
+
+| Term | Definition |
+|------|------------|
+| **Hydration** | React attaching interactivity to server HTML |
+| **Server Component** | Renders on server, no hydration needed |
+| **Client Component** | Requires hydration for interactivity |
+| **Hydration error** | Server/client HTML mismatch |
