@@ -200,7 +200,7 @@ body {
 
 .prose pre {
   background-color: #18181b;
-  border: 1px solid #18181b;
+  border: none;
   border-radius: 0.5rem;
   overflow-x: auto;
   max-width: 100%;
@@ -246,6 +246,12 @@ body {
   border-radius: 0;
   word-break: normal;
   font-size: inherit;
+}
+
+/* Ensure highlight.js styles don't create a visual border effect */
+.prose pre code.hljs {
+  background-color: transparent !important;
+  padding: 0 !important;
 }
 
 .prose ul,
