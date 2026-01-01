@@ -1,0 +1,121 @@
+---
+title: The Update Loop
+description: How state changes in response to events
+---
+
+## The Heart of the Program
+
+The Update function is where your application logic lives:
+
+```go
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch msg := msg.(type) {
+    case tea.KeyMsg:
+        switch msg.String() {
+        case "up", "k":
+            if m.cursor > 0 {
+                m.cursor--
+            }
+        case "down", "j":
+            if m.cursor < len(m.choices)-1 {
+                m.cursor++
+            }
+        case "enter", " ":
+            if _, ok := m.selected[m.cursor]; ok {
+                delete(m.selected, m.cursor)
+            } else {
+                m.selected[m.cursor] = struct{}{}
+            }
+        case "q", "ctrl+c":
+            return m, tea.Quit
+        }
+    }
+    return m, nil
+}
+```
+
+## What Update Does
+
+Update has two responsibilities:
+
+1. **Compute the next state** based on the incoming message
+2. **Decide what work should happen next** by returning a command
+
+Update receives messages (events) and is the **only place state is allowed to change**.
+
+## What Update Must NOT Do
+
+Update must:
+
+- Never block
+- Never do I/O directly
+- Never spawn goroutines
+- Never call `fmt.Println`
+
+If you need side effects, return a `tea.Cmd`. Bubble Tea executes it and delivers the result as a new message.
+
+## Why Update Returns (Model, Cmd)
+
+The return signature enforces the architecture:
+
+```go
+(tea.Model, tea.Cmd)
+```
+
+- **Model**: the new state after processing the message
+- **Cmd**: optional work to schedule (or `nil` for nothing)
+
+By returning both, Update remains pure. It describes what changed and what should happen next, without actually doing the work.
+
+## The Init Method
+
+Init runs **once** at startup, before any events:
+
+```go
+func (m model) Init() tea.Cmd {
+    return nil
+}
+```
+
+What Init **is**:
+
+- A hook to request startup side effects
+- Returns a command (or `nil`)
+
+What Init is **not**:
+
+- Not for initializing state (you did that in `initialModel()`)
+- Not for mutating the model
+- Not for running logic directly
+
+Common uses:
+
+- Start a timer
+- Fetch initial data
+- Set up subscriptions
+
+Returning `nil` means "no startup work needed."
+
+## The Complete Cycle
+
+1. `initialModel()` creates your starting struct
+2. `tea.NewProgram(m)` starts the event loop
+3. `Init()` runs once (optionally returns a command)
+4. `View()` draws the initial screen
+5. User input triggers a message
+6. `Update()` processes the message, returns new state
+7. `View()` redraws with the new state
+8. Repeat from step 5
+
+```
+┌─────────────────────────────────────────┐
+│                                         │
+│  Init() ──→ View() ──→ [wait for msg]   │
+│                              │          │
+│                              ▼          │
+│              Update(msg) ──→ View()     │
+│                   │                     │
+│                   └─────────────────────┘
+│                         (loop)
+└─────────────────────────────────────────┘
+```

@@ -1,0 +1,126 @@
+---
+title: Messages and Commands
+description: The event system that drives Bubble Tea applications
+---
+
+## Understanding tea.Msg
+
+A message represents something that happened. In Go terms, `tea.Msg` is an empty interface:
+
+```go
+type Msg interface{}
+```
+
+This means any value can be a message. Messages are distinguished by **type**, not content.
+
+Examples of messages:
+
+- Key press
+- Timer tick
+- Window resize
+- HTTP response
+- Custom application event
+
+Messages carry **what happened**. The Update function decides what to do about it.
+
+## Type Switches for Message Handling
+
+Since messages arrive as the interface type `tea.Msg`, you use a **type switch** to determine what kind of event occurred:
+
+```go
+switch msg := msg.(type) {
+case tea.KeyMsg:
+    // handle keyboard input
+case tea.WindowSizeMsg:
+    // handle window resize
+case customMsg:
+    // handle your custom message
+}
+```
+
+Inside each `case`:
+
+- `msg` is rebound to the **concrete message value**
+- It has the correct static type for that case
+- You can access type-specific fields and methods
+
+## tea.KeyMsg Specifically
+
+When a key is pressed, Bubble Tea sends a `tea.KeyMsg`:
+
+```go
+case tea.KeyMsg:
+    switch msg.String() {
+    case "up", "k":
+        // move cursor up
+    case "down", "j":
+        // move cursor down
+    case "enter", " ":
+        // toggle selection
+    case "q", "ctrl+c":
+        return m, tea.Quit
+    }
+```
+
+The outer switch determines the **event kind** (key, timer, etc).
+The inner switch determines **which key** was pressed.
+
+This two-level structure scales cleanly as your application grows.
+
+## Understanding tea.Cmd
+
+A command is work packaged as a function:
+
+```go
+type Cmd func() Msg
+```
+
+Commands:
+
+- Are executed by Bubble Tea (not by you)
+- Run asynchronously
+- Return a message when complete
+- That message is fed back into Update
+
+Commands do **not**:
+
+- Mutate state directly
+- Access the model
+- Run synchronously in Update
+
+## Why Commands Exist
+
+Init and Update do not *run* side effects. They **request** side effects by returning a `tea.Cmd`.
+
+Bubble Tea is responsible for:
+
+- Executing commands
+- Managing concurrency
+- Delivering results safely back to Update
+
+This keeps:
+
+- Update pure and predictable
+- State transitions deterministic
+- Side effects controlled
+
+## The Flow
+
+Commands produce messages. Messages trigger Update. This is literal, not metaphorical:
+
+```
+Cmd runs → returns Msg → Update(msg) → new state → View()
+```
+
+Keyboard input is just another message source, no different from a timer or HTTP response.
+
+## Common Built-in Commands
+
+| Command | Purpose |
+|---------|---------|
+| `tea.Quit` | Exits the program |
+| `tea.ClearScreen` | Clears the terminal |
+| `tea.Batch(cmds...)` | Runs multiple commands together |
+| `nil` | No command (do nothing) |
+
+Returning `nil` as a command means "no additional work needed."

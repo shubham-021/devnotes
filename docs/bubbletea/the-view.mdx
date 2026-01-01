@@ -1,0 +1,126 @@
+---
+title: The View
+description: Rendering your application state to the terminal
+---
+
+## What View Does
+
+The View function reads state and returns a **complete string snapshot** of the UI:
+
+```go
+func (m model) View() string {
+    s := "What would you like to do today?\n\n"
+
+    for i, choice := range m.choices {
+        cursor := " "
+        if m.cursor == i {
+            cursor = ">"
+        }
+
+        checked := " "
+        if _, ok := m.selected[i]; ok {
+            checked = "x"
+        }
+
+        s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, choice)
+    }
+
+    s += "\nPress q to quit.\n"
+    return s
+}
+```
+
+## View is a Pure Function
+
+View must:
+
+- Only read from the model
+- Return a string
+- Be deterministic (same state = same output)
+
+View must **not**:
+
+- Print anything
+- Cause side effects
+- Modify state
+- Make network calls
+- Access external resources
+
+Given the same model, View always returns the same string.
+
+## Full Redraws, Not Incremental Updates
+
+Bubble Tea uses a **full redraw** model:
+
+- View returns the **entire screen** every time
+- Bubble Tea clears the terminal
+- Bubble Tea prints the returned string
+- This repeats after every update
+
+There is no concept of:
+
+- Incremental updates
+- Retained UI components
+- Partial redraws
+
+String concatenation in View is just building the frame for this render cycle.
+
+## Building the UI String
+
+Common patterns for constructing the view:
+
+### Simple Concatenation
+
+```go
+s := "Header\n\n"
+s += "Body content\n"
+s += "\nFooter"
+return s
+```
+
+### Using fmt.Sprintf
+
+```go
+s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, choice)
+```
+
+### Using strings.Builder for Performance
+
+```go
+var b strings.Builder
+b.WriteString("Header\n\n")
+for _, item := range items {
+    b.WriteString(item)
+    b.WriteString("\n")
+}
+return b.String()
+```
+
+## Rendering Different States
+
+Use conditionals to render different UI based on application state:
+
+```go
+func (m model) View() string {
+    if m.loading {
+        return "Loading..."
+    }
+
+    if m.err != nil {
+        return fmt.Sprintf("Error: %v", m.err)
+    }
+
+    return m.renderMainView()
+}
+```
+
+## The Rendering Cycle
+
+Every time Update returns:
+
+1. Bubble Tea receives the new model
+2. Bubble Tea calls `View()` on the new model
+3. Bubble Tea handles terminal output (clear + print)
+4. The user sees the updated interface
+
+You never call `View()` yourself. You never print. You just return a string describing what the screen should look like.

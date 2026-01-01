@@ -10,6 +10,17 @@ export interface NavSection {
 
 export const navigation: NavSection[] = [
     {
+        title: "Bubble Tea",
+        items: [
+            { title: "Introduction", slug: "bubbletea/introduction" },
+            { title: "The Model", slug: "bubbletea/the-model" },
+            { title: "Messages & Commands", slug: "bubbletea/messages-and-commands" },
+            { title: "The Update Loop", slug: "bubbletea/the-update-loop" },
+            { title: "The View", slug: "bubbletea/the-view" },
+            { title: "Example App", slug: "bubbletea/example-app" },
+        ],
+    },
+    {
         title: "Go",
         items: [
             { title: "Getting Started", slug: "go/getting-started" },

@@ -1,0 +1,101 @@
+---
+title: The Model
+description: State management in Bubble Tea applications
+---
+
+## What is the Model
+
+The **model** is the entire state of your application. It is a struct that serves as the single source of truth.
+
+```go
+type model struct {
+    choices  []string
+    cursor   int
+    selected map[int]struct{}
+}
+```
+
+Everything visible on screen must be derivable from the model.
+
+## Rules for Model Design
+
+The model must contain **plain data only**:
+
+- No side effects
+- No I/O operations
+- No printing
+- No network calls
+- No file access
+
+The model is passive. It holds state. Other functions read from it and decide what to do.
+
+## Initializing the Model
+
+Create a function that returns your starting state:
+
+```go
+func initialModel() model {
+    return model{
+        choices:  []string{"Buy groceries", "Walk the dog", "Learn Bubble Tea"},
+        selected: make(map[int]struct{}),
+    }
+}
+```
+
+Always use `make()` for maps to avoid nil map panics when you first try to add entries.
+
+## The Set Pattern with `map[int]struct{}`
+
+A `map[int]struct{}` is used as a **set**:
+
+```go
+selected map[int]struct{}
+```
+
+This pattern works because:
+
+- Keys represent selected items
+- Empty struct (`struct{}{}`) uses **zero bytes** of memory
+- Presence of a key means selected
+- Absence means not selected
+
+To add an item to the set:
+
+```go
+m.selected[index] = struct{}{}
+```
+
+To check if an item is in the set:
+
+```go
+if _, ok := m.selected[index]; ok {
+    // item is selected
+}
+```
+
+To remove an item from the set:
+
+```go
+delete(m.selected, index)
+```
+
+## Memory and Performance
+
+| Concept | Usage | Why |
+|---------|-------|-----|
+| `make()` | `make(map[int]struct{})` | Allocates memory to avoid nil map panic |
+| `struct{}{}` | `m.selected[i] = struct{}{}` | Zero-byte marker for set membership |
+| `nil` | Return from Init/Update | Signals no background work needed |
+| `_, ok` pattern | `_, ok := m.selected[i]` | Safely checks existence without using the value |
+
+## The Model as a Value Receiver
+
+When you define methods on your model, you typically use a **value receiver**:
+
+```go
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    // m is a copy of the model
+}
+```
+
+This means the function receives a **copy** of the model. You modify this copy and return it. Bubble Tea handles the rest.

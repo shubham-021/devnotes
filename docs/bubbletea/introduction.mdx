@@ -1,0 +1,78 @@
+---
+title: Introduction
+description: Understanding Bubble Tea as an event-driven state machine
+---
+
+## The Core Mental Model
+
+Bubble Tea is not procedural code that runs top to bottom. It is an **event-driven state machine** where a loop is controlled by the framework.
+
+You provide:
+
+- **State**: the data representing your application
+- **Rules for how state changes**: logic that responds to events
+- **Rules for how state is rendered**: a function that draws the UI
+
+Bubble Tea runs the loop.
+
+## The Four Core Concepts
+
+Every Bubble Tea program is built on four concepts:
+
+| Concept | Purpose | Returns |
+|---------|---------|---------|
+| **Model** | Holds your application state | N/A (it's a struct) |
+| **Init** | Requests startup side effects | `tea.Cmd` |
+| **Update** | Changes state in response to messages | `(tea.Model, tea.Cmd)` |
+| **View** | Renders state as a string | `string` |
+
+These four concepts work together in a continuous cycle:
+
+```
+User Input → Message → Update → New State → View → Screen
+     ↑                                              |
+     └──────────────────────────────────────────────┘
+```
+
+## Why Types Instead of Strings
+
+Bubble Tea does **not** use string event names, enums, or integer codes. It uses **types** because:
+
+- The compiler enforces correctness
+- No naming collisions
+- Extensible without a central registry
+- Zero runtime guessing
+
+Each event is a type. Each message carries **what happened**, not what to do.
+
+## What Bubble Tea is NOT
+
+Bubble Tea is **not**:
+
+- A widget framework
+- An imperative UI toolkit
+- Something where you "print when needed"
+
+Bubble Tea **is**:
+
+- A controlled event loop
+- A strict architecture
+- A Go-native interpretation of the Elm Architecture
+
+## Why It May Feel Confusing at First
+
+Bubble Tea assumes you understand:
+
+- Go interfaces
+- Type switches
+- Pure vs effectful code
+
+Once those concepts click, Bubble Tea stops being magical and becomes predictable.
+
+## The Mental Model to Lock In
+
+> Bubble Tea programs are deterministic machines.
+> Messages describe events.
+> Update decides state changes.
+> Commands describe side effects.
+> View describes what the state looks like.
