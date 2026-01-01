@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Mono } from "next/font/google";
+import { FontProvider } from "@/lib/font-context";
+import { ThemeProvider } from "@/lib/theme-context";
 import "./globals.css";
 
 const dmMono = DM_Mono({
@@ -19,8 +21,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={dmMono.variable}>
-      <body className="font-mono antialiased">{children}</body>
+    <html lang="en" className={dmMono.variable} suppressHydrationWarning>
+      <body className="font-mono antialiased">
+        <ThemeProvider>
+          <FontProvider>{children}</FontProvider>
+        </ThemeProvider>
+      </body>
     </html>
   );
 }

@@ -1,6 +1,46 @@
 @import "tailwindcss";
-@import "highlight.js/styles/github-dark.css";
 @plugin "@tailwindcss/typography";
+
+/* Dark theme code highlighting (default) */
+:root[data-theme="dark"] {
+  @import "highlight.js/styles/github-dark.css";
+}
+
+/* Light theme code highlighting */
+:root[data-theme="light"] .hljs {
+  background: #f6f8fa;
+  color: #24292e;
+}
+
+:root[data-theme="light"] .hljs-comment,
+:root[data-theme="light"] .hljs-quote {
+  color: #6a737d;
+}
+
+:root[data-theme="light"] .hljs-keyword,
+:root[data-theme="light"] .hljs-selector-tag {
+  color: #d73a49;
+}
+
+:root[data-theme="light"] .hljs-string,
+:root[data-theme="light"] .hljs-addition {
+  color: #22863a;
+}
+
+:root[data-theme="light"] .hljs-number,
+:root[data-theme="light"] .hljs-literal {
+  color: #005cc5;
+}
+
+:root[data-theme="light"] .hljs-title,
+:root[data-theme="light"] .hljs-section {
+  color: #6f42c1;
+}
+
+:root[data-theme="light"] .hljs-built_in,
+:root[data-theme="light"] .hljs-type {
+  color: #005cc5;
+}
 
 @theme {
   --font-sans: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
@@ -8,32 +48,67 @@
   --font-mono: var(--font-mono), ui-monospace, monospace;
 }
 
+/* Paperback texture for light theme */
+:root[data-theme="light"] {
+  --paper-bg: #f5f0e6;
+  --paper-text: #3d3629;
+  --paper-texture: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.08'/%3E%3C/svg%3E");
+}
+
+.bg-paper {
+  background-color: var(--paper-bg);
+  background-image: var(--paper-texture);
+  color: var(--paper-text);
+}
+
 * {
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   overflow-x: hidden;
 }
 
-::-webkit-scrollbar {
+/* Dark theme scrollbar */
+:root[data-theme="dark"] ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
-::-webkit-scrollbar-track {
+:root[data-theme="dark"] ::-webkit-scrollbar-track {
   background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb {
   background: #3f3f46;
   border-radius: 4px;
 }
 
-::-webkit-scrollbar-thumb:hover {
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
   background: #52525b;
 }
 
+/* Light theme scrollbar */
+:root[data-theme="light"] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+:root[data-theme="light"] ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:root[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #d4d4d8;
+  border-radius: 4px;
+}
+
+:root[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: #a1a1aa;
+}
+
+/* Dark theme prose (default) */
 .prose {
   --tw-prose-body: #d4d4d8;
   --tw-prose-headings: #fafafa;
@@ -50,6 +125,21 @@ html, body {
   overflow-wrap: break-word;
   font-size: 0.95rem;
   line-height: 1.7;
+}
+
+/* Light theme prose */
+:root[data-theme="light"] .prose {
+  --tw-prose-body: #3d3629;
+  --tw-prose-headings: #1a1610;
+  --tw-prose-links: #b45309;
+  --tw-prose-bold: #1a1610;
+  --tw-prose-code: #be185d;
+  --tw-prose-pre-bg: #e6dec9;
+  --tw-prose-pre-code: #3d3629;
+  --tw-prose-quotes: #786c5e;
+  --tw-prose-hr: #d6cbb8;
+  --tw-prose-th-borders: #d6cbb8;
+  --tw-prose-td-borders: #e6dec9;
 }
 
 @media (min-width: 640px) {
@@ -110,7 +200,7 @@ html, body {
 
 .prose pre {
   background-color: #18181b;
-  border: 1px solid #27272a;
+  border: 1px solid #18181b;
   border-radius: 0.5rem;
   overflow-x: auto;
   max-width: 100%;
@@ -118,6 +208,11 @@ html, body {
   padding: 0.75rem;
   margin-left: 0;
   margin-right: 0;
+}
+
+:root[data-theme="light"] .prose pre {
+  background-color: #e6dec9;
+  border: 1px solid #d6cbb8;
 }
 
 @media (min-width: 640px) {
@@ -139,6 +234,10 @@ html, body {
   border-radius: 0.25rem;
   font-size: 0.8em;
   word-break: break-word;
+}
+
+:root[data-theme="light"] .prose code {
+  background-color: #e6dec9;
 }
 
 .prose pre code {
@@ -188,6 +287,10 @@ html, body {
   line-height: 1.6;
 }
 
+:root[data-theme="light"] .lead {
+  color: #786c5e;
+}
+
 @media (min-width: 640px) {
   .lead {
     font-size: 0.95rem;
@@ -199,4 +302,16 @@ html, body {
     font-size: 1.1rem;
     line-height: 1.75;
   }
+}
+
+/* Light theme code copy button */
+:root[data-theme="light"] .group button {
+  background-color: rgba(245, 240, 230, 0.9);
+  border-color: #d6cbb8;
+  color: #786c5e;
+}
+
+:root[data-theme="light"] .group button:hover {
+  background-color: #fdfbf7;
+  color: #3d3629;
 }

@@ -5,6 +5,7 @@ import { compileMDX } from "next-mdx-remote/rsc";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
 import rehypeHighlight from "rehype-highlight";
+import { CodeBlock } from "@/components/code-block";
 
 const contentDir = path.join(process.cwd(), "docs");
 
@@ -12,6 +13,11 @@ export interface Frontmatter {
     title: string;
     description: string;
 }
+
+// Custom components for MDX
+const components = {
+    pre: CodeBlock,
+};
 
 export function getAllDocs(): { slug: string[]; frontmatter: Frontmatter }[] {
     const docs: { slug: string[]; frontmatter: Frontmatter }[] = [];
@@ -50,6 +56,7 @@ export async function getDocBySlug(slug: string[]) {
 
     const { content: mdxContent } = await compileMDX<Frontmatter>({
         source: content,
+        components,
         options: {
             parseFrontmatter: true,
             mdxOptions: {
