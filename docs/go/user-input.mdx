@@ -1,0 +1,300 @@
+---
+title: User Input
+description: Reading input from the terminal using fmt, bufio, and os packages
+---
+
+## Basic Input with fmt.Scan
+
+The simplest way to read input is using the `fmt` package. These functions read from standard input (the terminal).
+
+### fmt.Scan
+
+Reads space-separated values into variables:
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    var name string
+    var age int
+
+    fmt.Print("Enter name and age: ")
+    fmt.Scan(&name, &age)  // Pass pointers
+
+    fmt.Printf("Name: %s, Age: %d\n", name, age)
+}
+```
+
+Input: `Alice 25`
+
+The `&` operator passes the memory address of the variable, allowing `Scan` to modify the original variable.
+
+### fmt.Scanln
+
+Reads until a newline. Stops at the first newline character:
+
+```go
+var firstName, lastName string
+
+fmt.Print("Enter first and last name: ")
+fmt.Scanln(&firstName, &lastName)
+```
+
+The difference from `Scan`: `Scanln` requires all values on one line.
+
+### fmt.Scanf
+
+Reads input according to a format string:
+
+```go
+var day, month, year int
+
+fmt.Print("Enter date (DD/MM/YYYY): ")
+fmt.Scanf("%d/%d/%d", &day, &month, &year)
+
+fmt.Printf("Day: %d, Month: %d, Year: %d\n", day, month, year)
+```
+
+Input: `25/12/2024`
+
+---
+
+## Handling Errors
+
+All scan functions return the number of items successfully scanned and an error:
+
+```go
+var age int
+
+fmt.Print("Enter your age: ")
+n, err := fmt.Scan(&age)
+
+if err != nil {
+    fmt.Println("Error reading input:", err)
+    return
+}
+
+fmt.Printf("Successfully read %d value(s): %d\n", n, age)
+```
+
+---
+
+## Reading Full Lines with bufio
+
+`fmt.Scan` stops at whitespace. To read an entire line including spaces, use `bufio.Reader`:
+
+```go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "os"
+)
+
+func main() {
+    reader := bufio.NewReader(os.Stdin)
+
+    fmt.Print("Enter your full name: ")
+    name, err := reader.ReadString('\n')
+
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+
+    fmt.Println("Hello,", name)
+}
+```
+
+### Trimming the Newline
+
+`ReadString` includes the delimiter. Use `strings.TrimSpace` to remove it:
+
+```go
+import (
+    "bufio"
+    "fmt"
+    "os"
+    "strings"
+)
+
+func main() {
+    reader := bufio.NewReader(os.Stdin)
+
+    fmt.Print("Enter a sentence: ")
+    input, _ := reader.ReadString('\n')
+    input = strings.TrimSpace(input)  // Remove \n and extra whitespace
+
+    fmt.Printf("You entered: [%s]\n", input)
+}
+```
+
+---
+
+## Converting String Input to Numbers
+
+User input is typically read as strings. Convert to numbers using `strconv`:
+
+```go
+import (
+    "bufio"
+    "fmt"
+    "os"
+    "strconv"
+    "strings"
+)
+
+func main() {
+    reader := bufio.NewReader(os.Stdin)
+
+    fmt.Print("Enter a number: ")
+    input, _ := reader.ReadString('\n')
+    input = strings.TrimSpace(input)
+
+    // Convert string to int
+    number, err := strconv.Atoi(input)
+    if err != nil {
+        fmt.Println("Invalid number:", err)
+        return
+    }
+
+    fmt.Printf("Double: %d\n", number*2)
+}
+```
+
+### Common Conversions
+
+| Function | Description | Example |
+|----------|-------------|---------|
+| `strconv.Atoi(s)` | String to int | `"42"` to `42` |
+| `strconv.Itoa(i)` | Int to string | `42` to `"42"` |
+| `strconv.ParseFloat(s, 64)` | String to float64 | `"3.14"` to `3.14` |
+| `strconv.ParseBool(s)` | String to bool | `"true"` to `true` |
+
+---
+
+## Using bufio.Scanner
+
+For reading multiple lines or tokenized input, `bufio.Scanner` is cleaner:
+
+```go
+import (
+    "bufio"
+    "fmt"
+    "os"
+)
+
+func main() {
+    scanner := bufio.NewScanner(os.Stdin)
+
+    fmt.Println("Enter lines (empty line to stop):")
+
+    for scanner.Scan() {
+        line := scanner.Text()
+        if line == "" {
+            break
+        }
+        fmt.Println("You said:", line)
+    }
+
+    if err := scanner.Err(); err != nil {
+        fmt.Println("Error reading:", err)
+    }
+}
+```
+
+---
+
+## Reading from os.Stdin Directly
+
+For low-level control, read bytes directly from `os.Stdin`:
+
+```go
+import (
+    "fmt"
+    "os"
+)
+
+func main() {
+    buffer := make([]byte, 100)
+
+    fmt.Print("Enter something: ")
+    n, err := os.Stdin.Read(buffer)
+
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+
+    fmt.Printf("Read %d bytes: %s\n", n, string(buffer[:n]))
+}
+```
+
+This is rarely needed. Prefer `bufio` for most use cases.
+
+---
+
+## Practical Example: Interactive Menu
+
+```go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "os"
+    "strings"
+)
+
+func main() {
+    reader := bufio.NewReader(os.Stdin)
+
+    for {
+        fmt.Println("\n--- Menu ---")
+        fmt.Println("1. Say Hello")
+        fmt.Println("2. Show Date")
+        fmt.Println("3. Exit")
+        fmt.Print("Choose an option: ")
+
+        choice, _ := reader.ReadString('\n')
+        choice = strings.TrimSpace(choice)
+
+        switch choice {
+        case "1":
+            fmt.Print("Enter your name: ")
+            name, _ := reader.ReadString('\n')
+            fmt.Printf("Hello, %s", name)
+        case "2":
+            fmt.Println("Today is a great day!")
+        case "3":
+            fmt.Println("Goodbye!")
+            return
+        default:
+            fmt.Println("Invalid option")
+        }
+    }
+}
+```
+
+---
+
+## Quick Reference
+
+| Method | Use Case | Stops At |
+|--------|----------|----------|
+| `fmt.Scan` | Multiple space-separated values | Whitespace |
+| `fmt.Scanln` | Values on a single line | Newline |
+| `fmt.Scanf` | Formatted input | Format pattern |
+| `bufio.ReadString` | Full line with delimiter | Specified delimiter |
+| `bufio.Scanner` | Multiple lines, tokenized input | Newline (default) |
+
+## Key Points
+
+1. Always pass pointers (`&variable`) to `fmt.Scan` functions
+2. Use `bufio.Reader` when you need to read full lines with spaces
+3. Remember to trim newlines from `bufio` input
+4. Convert string input to numbers using `strconv` package
+5. Check errors when parsing user input

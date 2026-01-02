@@ -332,12 +332,130 @@ func example() {
 // Output: third, second, first (LIFO order)
 ```
 
+### Defer for Mutex Unlock
+
+Always use `defer mu.Unlock()` immediately after `Lock()`. This prevents deadlocks when functions have multiple return paths or panic:
+
+```go
+var mu sync.Mutex
+var counter int
+
+func increment() int {
+    mu.Lock()
+    defer mu.Unlock()  // Guaranteed to unlock
+    
+    if counter >= 100 {
+        return counter  // Unlock still runs
+    }
+    
+    counter++
+    return counter
+}
+```
+
+Without defer, you risk forgetting to unlock:
+
+```go
+// BAD: Easy to forget unlock on error paths
+func bad() int {
+    mu.Lock()
+    
+    if someCondition {
+        return 0  // DEADLOCK: Lock never released
+    }
+    
+    counter++
+    mu.Unlock()
+    return counter
+}
+```
+
+### Defer for WaitGroup Done
+
+Use `defer wg.Done()` at the start of goroutine functions:
+
+```go
+func worker(id int, wg *sync.WaitGroup) {
+    defer wg.Done()  // Guaranteed to decrement counter
+    
+    result, err := doWork(id)
+    if err != nil {
+        fmt.Println("Error:", err)
+        return  // wg.Done() still runs
+    }
+    
+    process(result)
+}
+```
+
+### Common Defer Patterns
+
+| Resource | Defer Pattern |
+|----------|---------------|
+| File | `defer file.Close()` |
+| Mutex | `defer mu.Unlock()` |
+| RWMutex (read) | `defer rw.RUnlock()` |
+| RWMutex (write) | `defer rw.Unlock()` |
+| WaitGroup | `defer wg.Done()` |
+| HTTP Response | `defer resp.Body.Close()` |
+| Database connection | `defer db.Close()` |
+| Transaction | `defer tx.Rollback()` (with commit check) |
+
+### Defer with Error Handling
+
+For operations that can fail on cleanup, handle the error:
+
+```go
+func writeFile(filename string, data []byte) (err error) {
+    file, err := os.Create(filename)
+    if err != nil {
+        return err
+    }
+    
+    defer func() {
+        closeErr := file.Close()
+        if err == nil {
+            err = closeErr  // Only set if no prior error
+        }
+    }()
+    
+    _, err = file.Write(data)
+    return err
+}
+```
+
+### Defer Argument Evaluation
+
+Arguments to deferred functions are evaluated immediately, not when the deferred function runs:
+
+```go
+func example() {
+    x := 10
+    defer fmt.Println(x)  // x is evaluated NOW (10)
+    x = 20
+}
+// Output: 10
+```
+
+To capture the final value, use a closure:
+
+```go
+func example() {
+    x := 10
+    defer func() {
+        fmt.Println(x)  // Captures variable, not value
+    }()
+    x = 20
+}
+// Output: 20
+```
+
 ---
 
 ## Summary Table
 
 | Idiom | Purpose | Example |
-|-------|---------|---------|
+|-------|---------|---------|\
 | Comma-ok | Check existence safely | `v, ok := m[key]` |
 | Empty struct | Zero-memory set values | `map[int]struct{}` |
 | `ok` pattern | Existence checks | Map lookup, type assertion |
@@ -345,4 +463,4 @@ func example() {
 | `new()` | Allocate & zero-initialize | `p := new(Config)` |
 | `make()` | Initialize maps/slices/channels | `make(map[K]V)` |
 | `nil` | Zero state for reference types | Uninitialized maps, slices |
-| `defer` | Guaranteed cleanup | `defer file.Close()` |
+| `defer` | Guaranteed cleanup | `defer mu.Unlock()` |

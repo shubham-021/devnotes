@@ -110,9 +110,165 @@ Built-in functionality for goroutines to communicate with each other (covered in
 | Communication | Channels (easy) | Complex |
 | Scalability | Millions possible | Limited by resources |
 
+## Passing WaitGroup to Functions
+
+When passing a WaitGroup to a goroutine function, you must pass a pointer. WaitGroup contains internal state that must be shared, not copied.
+
+### Wrong: Passing by Value
+
+```go
+// WRONG: WaitGroup is copied, Done() affects the copy
+func worker(wg sync.WaitGroup) {
+    defer wg.Done()  // This Done() is on a COPY
+    // do work...
+}
+
+func main() {
+    var wg sync.WaitGroup
+    wg.Add(1)
+    go worker(wg)  // Pass by value: creates a copy
+    wg.Wait()      // DEADLOCK: original wg never decremented
+}
+```
+
+### Correct: Passing by Pointer
+
+```go
+// CORRECT: WaitGroup is shared via pointer
+func worker(wg *sync.WaitGroup) {
+    defer wg.Done()  // Affects the original WaitGroup
+    // do work...
+}
+
+func main() {
+    var wg sync.WaitGroup
+    wg.Add(1)
+    go worker(&wg)  // Pass pointer
+    wg.Wait()       // Works correctly
+}
+```
+
+---
+
+## Using Defer with Done
+
+Always use `defer wg.Done()` at the start of your goroutine function. This guarantees the counter decrements even if the function panics or returns early:
+
+```go
+func worker(id int, wg *sync.WaitGroup) {
+    defer wg.Done()  // Guaranteed to run on function exit
+    
+    result, err := doWork(id)
+    if err != nil {
+        fmt.Println("Error:", err)
+        return  // wg.Done() still runs
+    }
+    
+    fmt.Println("Result:", result)
+}
+```
+
+Without `defer`, a forgotten return path causes deadlock:
+
+```go
+// BAD: Forgetting Done() on error path
+func worker(id int, wg *sync.WaitGroup) {
+    result, err := doWork(id)
+    if err != nil {
+        fmt.Println("Error:", err)
+        return  // DEADLOCK: wg.Done() never called
+    }
+    
+    fmt.Println("Result:", result)
+    wg.Done()
+}
+```
+
+---
+
+## Goroutine Lifecycle and Mechanics
+
+### Stack Size
+
+Goroutines start with a small stack (2KB) that grows and shrinks as needed. OS threads typically start with 1-8MB. This is why you can run millions of goroutines.
+
+### Scheduling
+
+The Go runtime has its own scheduler (GMP model):
+- **G**: Goroutine
+- **M**: Machine (OS thread)
+- **P**: Processor (logical CPU context)
+
+The scheduler multiplexes many goroutines onto fewer OS threads. Goroutines yield at certain points (function calls, channel operations, etc.), allowing others to run.
+
+### When Goroutines Yield
+
+Goroutines cooperatively yield at:
+- Channel send/receive
+- System calls (I/O, network)
+- Function calls (sometimes)
+- Explicit `runtime.Gosched()`
+- Memory allocation
+
+This is why CPU-bound tight loops without function calls can starve other goroutines.
+
+---
+
+## Complete Pattern: WaitGroup with Multiple Workers
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "time"
+)
+
+func worker(id int, wg *sync.WaitGroup) {
+    defer wg.Done()
+    
+    fmt.Printf("Worker %d starting\n", id)
+    time.Sleep(time.Second)
+    fmt.Printf("Worker %d done\n", id)
+}
+
+func main() {
+    var wg sync.WaitGroup
+    
+    for i := 1; i <= 5; i++ {
+        wg.Add(1)
+        go worker(i, &wg)
+    }
+    
+    wg.Wait()
+    fmt.Println("All workers completed")
+}
+```
+
+Output (order may vary):
+```
+Worker 1 starting
+Worker 2 starting
+Worker 3 starting
+Worker 4 starting
+Worker 5 starting
+Worker 2 done
+Worker 5 done
+Worker 1 done
+Worker 3 done
+Worker 4 done
+All workers completed
+```
+
+---
+
 ## Key Points
 
-- A Go function can return multiple values
 - Use `go` keyword to run a function as a goroutine
-- Use `sync.WaitGroup` to synchronize goroutines
+- Use `sync.WaitGroup` to wait for goroutines to complete
+- Always pass `*sync.WaitGroup` (pointer), never by value
+- Always use `defer wg.Done()` to prevent deadlocks
+- Goroutines start with 2KB stack (grows as needed)
+- The Go scheduler multiplexes goroutines onto OS threads
 - Goroutines are extremely lightweight compared to traditional threads

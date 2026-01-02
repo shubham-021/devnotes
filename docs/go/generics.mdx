@@ -1,0 +1,476 @@
+---
+title: Generics
+description: Type parameters, constraints, and generic programming in Go
+---
+
+## What Are Generics?
+
+Generics allow you to write functions and types that work with multiple types while maintaining type safety. Instead of writing separate functions for `int`, `float64`, and `string`, you write one generic function.
+
+Before generics (Go 1.18+), you would either:
+- Write duplicate code for each type
+- Use `interface{}` and lose type safety
+
+---
+
+## Generic Functions
+
+### Basic Syntax
+
+```go
+func FunctionName[T constraint](param T) T {
+    // ...
+}
+```
+
+- `T` is the type parameter (can be any name)
+- `constraint` specifies what types are allowed
+- `T` can be used throughout the function
+
+### Example: Generic Max Function
+
+```go
+func Max[T int | float64](a, b T) T {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+func main() {
+    fmt.Println(Max(3, 5))       // 5 (int)
+    fmt.Println(Max(3.14, 2.71)) // 3.14 (float64)
+}
+```
+
+---
+
+## Type Constraints
+
+Constraints define which types can be used with a generic function.
+
+### The `any` Constraint
+
+`any` is an alias for `interface{}`. It allows any type:
+
+```go
+func Print[T any](value T) {
+    fmt.Println(value)
+}
+
+Print(42)
+Print("hello")
+Print(true)
+```
+
+### Union Constraints
+
+Use `|` to specify multiple allowed types:
+
+```go
+func Sum[T int | int32 | int64 | float32 | float64](numbers []T) T {
+    var sum T
+    for _, n := range numbers {
+        sum += n
+    }
+    return sum
+}
+
+ints := []int{1, 2, 3, 4, 5}
+fmt.Println(Sum(ints))  // 15
+
+floats := []float64{1.5, 2.5, 3.0}
+fmt.Println(Sum(floats))  // 7.0
+```
+
+### The `comparable` Constraint
+
+`comparable` allows types that support `==` and `!=` operators:
+
+```go
+func Contains[T comparable](slice []T, target T) bool {
+    for _, item := range slice {
+        if item == target {
+            return true
+        }
+    }
+    return false
+}
+
+fmt.Println(Contains([]int{1, 2, 3}, 2))          // true
+fmt.Println(Contains([]string{"a", "b"}, "c"))    // false
+```
+
+Types that are `comparable`:
+- All basic types (int, float, string, bool, etc.)
+- Pointers
+- Channels
+- Arrays of comparable types
+- Structs where all fields are comparable
+
+Types that are NOT `comparable`:
+- Slices
+- Maps
+- Functions
+
+---
+
+## Defining Custom Constraints
+
+Create constraint interfaces for complex requirements:
+
+### Interface Constraint
+
+```go
+type Number interface {
+    int | int8 | int16 | int32 | int64 |
+    uint | uint8 | uint16 | uint32 | uint64 |
+    float32 | float64
+}
+
+func Sum[T Number](nums []T) T {
+    var sum T
+    for _, n := range nums {
+        sum += n
+    }
+    return sum
+}
+```
+
+### Using `~` for Underlying Types
+
+The `~` operator matches types with the specified underlying type:
+
+```go
+type MyInt int
+
+type Integer interface {
+    ~int | ~int32 | ~int64
+}
+
+func Double[T Integer](n T) T {
+    return n * 2
+}
+
+var x MyInt = 5
+fmt.Println(Double(x))  // 10 (works because MyInt's underlying type is int)
+```
+
+Without `~`, `Double(x)` would fail because `MyInt` is not `int`.
+
+### Method Constraints
+
+Require types to have specific methods:
+
+```go
+type Stringer interface {
+    String() string
+}
+
+func PrintAll[T Stringer](items []T) {
+    for _, item := range items {
+        fmt.Println(item.String())
+    }
+}
+```
+
+### Combined Constraints
+
+Combine type unions with method requirements:
+
+```go
+type OrderedStringer interface {
+    ~int | ~string
+    String() string
+}
+```
+
+---
+
+## Multiple Type Parameters
+
+Functions can have multiple type parameters:
+
+```go
+func Map[T any, R any](slice []T, transform func(T) R) []R {
+    result := make([]R, len(slice))
+    for i, v := range slice {
+        result[i] = transform(v)
+    }
+    return result
+}
+
+func main() {
+    numbers := []int{1, 2, 3, 4}
+    
+    // Transform int to string
+    strings := Map(numbers, func(n int) string {
+        return fmt.Sprintf("Number: %d", n)
+    })
+    fmt.Println(strings)  // [Number: 1 Number: 2 Number: 3 Number: 4]
+    
+    // Transform int to float64
+    floats := Map(numbers, func(n int) float64 {
+        return float64(n) * 1.5
+    })
+    fmt.Println(floats)  // [1.5 3 4.5 6]
+}
+```
+
+### Generic Key-Value Pair
+
+```go
+func Zip[K any, V any](keys []K, values []V) map[int][2]any {
+    result := make(map[int][2]any)
+    for i := 0; i < len(keys) && i < len(values); i++ {
+        result[i] = [2]any{keys[i], values[i]}
+    }
+    return result
+}
+```
+
+---
+
+## Generic Types
+
+### Generic Structs
+
+```go
+type Stack[T any] struct {
+    items []T
+}
+
+func (s *Stack[T]) Push(item T) {
+    s.items = append(s.items, item)
+}
+
+func (s *Stack[T]) Pop() (T, bool) {
+    if len(s.items) == 0 {
+        var zero T
+        return zero, false
+    }
+    item := s.items[len(s.items)-1]
+    s.items = s.items[:len(s.items)-1]
+    return item, true
+}
+
+func (s *Stack[T]) Peek() (T, bool) {
+    if len(s.items) == 0 {
+        var zero T
+        return zero, false
+    }
+    return s.items[len(s.items)-1], true
+}
+
+func main() {
+    intStack := Stack[int]{}
+    intStack.Push(1)
+    intStack.Push(2)
+    intStack.Push(3)
+    
+    val, _ := intStack.Pop()
+    fmt.Println(val)  // 3
+    
+    stringStack := Stack[string]{}
+    stringStack.Push("hello")
+    stringStack.Push("world")
+}
+```
+
+### Generic Pair Type
+
+```go
+type Pair[T, U any] struct {
+    First  T
+    Second U
+}
+
+func NewPair[T, U any](first T, second U) Pair[T, U] {
+    return Pair[T, U]{First: first, Second: second}
+}
+
+func main() {
+    p1 := NewPair("name", 42)
+    fmt.Println(p1.First, p1.Second)  // name 42
+    
+    p2 := NewPair(3.14, true)
+    fmt.Println(p2.First, p2.Second)  // 3.14 true
+}
+```
+
+### Generic Result Type
+
+```go
+type Result[T any] struct {
+    Value T
+    Error error
+}
+
+func (r Result[T]) IsOk() bool {
+    return r.Error == nil
+}
+
+func (r Result[T]) Unwrap() T {
+    if r.Error != nil {
+        panic(r.Error)
+    }
+    return r.Value
+}
+
+func Divide[T float32 | float64](a, b T) Result[T] {
+    if b == 0 {
+        return Result[T]{Error: fmt.Errorf("division by zero")}
+    }
+    return Result[T]{Value: a / b}
+}
+```
+
+---
+
+## Type Inference
+
+Go can often infer type parameters:
+
+```go
+func First[T any](slice []T) T {
+    return slice[0]
+}
+
+// Explicit type argument
+result := First[int]([]int{1, 2, 3})
+
+// Type inference (preferred)
+result := First([]int{1, 2, 3})  // T inferred as int
+```
+
+Type inference does not work when:
+- There is no function argument of the type parameter
+- The type parameter only appears in the return type
+
+```go
+func Zero[T any]() T {
+    var zero T
+    return zero
+}
+
+// Must specify type explicitly
+n := Zero[int]()
+s := Zero[string]()
+```
+
+---
+
+## Built-in Constraints Package
+
+The `constraints` package provides useful predefined constraints:
+
+```go
+import "golang.org/x/exp/constraints"
+
+func Min[T constraints.Ordered](a, b T) T {
+    if a < b {
+        return a
+    }
+    return b
+}
+```
+
+Common constraints:
+- `constraints.Signed` - signed integers
+- `constraints.Unsigned` - unsigned integers
+- `constraints.Integer` - all integers
+- `constraints.Float` - float32, float64
+- `constraints.Complex` - complex64, complex128
+- `constraints.Ordered` - types that support < > <= >=
+
+---
+
+## Practical Examples
+
+### Generic Filter
+
+```go
+func Filter[T any](slice []T, predicate func(T) bool) []T {
+    var result []T
+    for _, item := range slice {
+        if predicate(item) {
+            result = append(result, item)
+        }
+    }
+    return result
+}
+
+func main() {
+    numbers := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+    
+    evens := Filter(numbers, func(n int) bool {
+        return n%2 == 0
+    })
+    fmt.Println(evens)  // [2 4 6 8 10]
+}
+```
+
+### Generic Reduce
+
+```go
+func Reduce[T any, R any](slice []T, initial R, reducer func(R, T) R) R {
+    result := initial
+    for _, item := range slice {
+        result = reducer(result, item)
+    }
+    return result
+}
+
+func main() {
+    numbers := []int{1, 2, 3, 4, 5}
+    
+    sum := Reduce(numbers, 0, func(acc, n int) int {
+        return acc + n
+    })
+    fmt.Println(sum)  // 15
+    
+    product := Reduce(numbers, 1, func(acc, n int) int {
+        return acc * n
+    })
+    fmt.Println(product)  // 120
+}
+```
+
+### Generic Set
+
+```go
+type Set[T comparable] map[T]struct{}
+
+func NewSet[T comparable]() Set[T] {
+    return make(Set[T])
+}
+
+func (s Set[T]) Add(item T) {
+    s[item] = struct{}{}
+}
+
+func (s Set[T]) Contains(item T) bool {
+    _, ok := s[item]
+    return ok
+}
+
+func (s Set[T]) Remove(item T) {
+    delete(s, item)
+}
+
+func (s Set[T]) Size() int {
+    return len(s)
+}
+```
+
+---
+
+## Key Points
+
+1. Type parameters go in square brackets: `func Name[T constraint](...)`
+2. Use `any` when any type is acceptable
+3. Use `comparable` for types that support `==` and `!=`
+4. Use `~T` to match types with underlying type `T`
+5. Multiple type parameters: `[T, U any]` or `[K comparable, V any]`
+6. Go infers type parameters when possible from function arguments
+7. Generic types (structs) require explicit type arguments: `Stack[int]{}`

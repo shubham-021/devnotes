@@ -1,0 +1,500 @@
+---
+title: Channels
+description: Communication between goroutines using channels, blocking behavior, and patterns
+---
+
+## What Are Channels?
+
+Channels are Go's primary mechanism for communication between goroutines. They are typed conduits through which you can send and receive values.
+
+```go
+ch := make(chan int)  // Create a channel of ints
+```
+
+Go's philosophy: **Do not communicate by sharing memory; share memory by communicating.**
+
+---
+
+## Creating Channels
+
+```go
+// Unbuffered channel
+ch := make(chan string)
+
+// Buffered channel (capacity of 5)
+buffered := make(chan int, 5)
+```
+
+---
+
+## Sending and Receiving
+
+Use the `<-` operator:
+
+```go
+ch <- value    // Send value into channel
+value := <-ch  // Receive value from channel
+```
+
+Example:
+
+```go
+func main() {
+    ch := make(chan string)
+
+    go func() {
+        ch <- "Hello from goroutine"
+    }()
+
+    message := <-ch
+    fmt.Println(message)  // Hello from goroutine
+}
+```
+
+---
+
+## Blocking Behavior
+
+This is crucial to understand:
+
+### Unbuffered Channels Block
+
+**Sending blocks** until another goroutine receives:
+
+```go
+ch := make(chan int)
+ch <- 42  // BLOCKS forever if nothing receives
+```
+
+**Receiving blocks** until another goroutine sends:
+
+```go
+ch := make(chan int)
+value := <-ch  // BLOCKS forever if nothing sends
+```
+
+This is why channels require goroutines:
+
+```go
+func main() {
+    ch := make(chan int)
+    
+    // This would deadlock:
+    // ch <- 42    // Main goroutine blocks, nothing can receive
+    // fmt.Println(<-ch)
+    
+    // Correct: use a goroutine
+    go func() {
+        ch <- 42
+    }()
+    
+    fmt.Println(<-ch)  // 42
+}
+```
+
+### Buffered Channels Block When Full/Empty
+
+Buffered channels only block when:
+- **Sending**: Buffer is full
+- **Receiving**: Buffer is empty
+
+```go
+ch := make(chan int, 2)
+
+ch <- 1  // Does not block (buffer has space)
+ch <- 2  // Does not block (buffer has space)
+ch <- 3  // BLOCKS (buffer is full)
+```
+
+```go
+ch := make(chan int, 2)
+ch <- 1
+ch <- 2
+
+fmt.Println(<-ch)  // 1 (does not block)
+fmt.Println(<-ch)  // 2 (does not block)
+fmt.Println(<-ch)  // BLOCKS (buffer is empty)
+```
+
+---
+
+## Unbuffered vs Buffered Channels
+
+| Aspect | Unbuffered | Buffered |
+|--------|------------|----------|
+| Creation | `make(chan T)` | `make(chan T, capacity)` |
+| Send blocks when | Always (until received) | Buffer is full |
+| Receive blocks when | Nothing to receive | Buffer is empty |
+| Synchronization | Tight (guaranteed handshake) | Loose (fire and forget until full) |
+| Use case | Coordination, signaling | Batching, rate limiting |
+
+### When to Use Each
+
+**Unbuffered**: When you need synchronization between goroutines.
+
+```go
+// Signal that work is done (synchronization)
+done := make(chan struct{})
+
+go func() {
+    // do work
+    close(done)  // Signal completion
+}()
+
+<-done  // Wait for signal
+```
+
+**Buffered**: When you want to decouple sender and receiver timing.
+
+```go
+// Worker pool with job queue
+jobs := make(chan Job, 100)
+
+// Producers can queue up to 100 jobs without waiting
+for _, job := range allJobs {
+    jobs <- job
+}
+```
+
+---
+
+## Closing Channels
+
+Use `close()` to signal that no more values will be sent:
+
+```go
+ch := make(chan int)
+
+go func() {
+    for i := 0; i < 5; i++ {
+        ch <- i
+    }
+    close(ch)  // Signal: no more values
+}()
+
+// Receive until channel is closed
+for value := range ch {
+    fmt.Println(value)
+}
+```
+
+### Why Close Channels?
+
+1. **Signal completion**: Tell receivers that work is done
+2. **Enable range loops**: `for v := range ch` exits when channel closes
+3. **Unblock receivers**: Receivers get zero value immediately
+
+### Detecting Closed Channels
+
+```go
+value, ok := <-ch
+if !ok {
+    fmt.Println("Channel is closed")
+}
+```
+
+- `ok` is `true` if value was received successfully
+- `ok` is `false` if channel is closed and empty
+
+### Rules for Closing
+
+1. Only the sender should close a channel
+2. Sending to a closed channel causes a panic
+3. Receiving from a closed channel returns zero values immediately
+4. Closing a closed channel causes a panic
+
+```go
+ch := make(chan int)
+close(ch)
+
+// These are safe:
+value := <-ch      // Returns 0 (zero value)
+value, ok := <-ch  // Returns 0, false
+
+// These panic:
+// ch <- 1      // panic: send on closed channel
+// close(ch)   // panic: close of closed channel
+```
+
+---
+
+## Range Over Channels
+
+Iterate until channel is closed:
+
+```go
+func producer(ch chan<- int) {
+    for i := 0; i < 5; i++ {
+        ch <- i
+    }
+    close(ch)
+}
+
+func main() {
+    ch := make(chan int)
+    go producer(ch)
+
+    for value := range ch {
+        fmt.Println(value)
+    }
+    // Loop exits when channel is closed
+}
+```
+
+---
+
+## Channel Direction
+
+Specify whether a channel parameter is send-only or receive-only:
+
+```go
+func send(ch chan<- int) {    // Send-only
+    ch <- 42
+    // <-ch  // Compile error: cannot receive
+}
+
+func receive(ch <-chan int) { // Receive-only
+    value := <-ch
+    // ch <- 1  // Compile error: cannot send
+}
+
+func main() {
+    ch := make(chan int)
+    go send(ch)
+    receive(ch)
+}
+```
+
+This provides compile-time safety and documents intent.
+
+---
+
+## Implementing WaitGroup with Channels
+
+You can achieve WaitGroup-like behavior using channels:
+
+### Using a Done Channel
+
+```go
+func worker(id int, done chan struct{}) {
+    fmt.Printf("Worker %d starting\n", id)
+    time.Sleep(time.Second)
+    fmt.Printf("Worker %d done\n", id)
+    done <- struct{}{}
+}
+
+func main() {
+    done := make(chan struct{})
+    numWorkers := 3
+
+    for i := 0; i < numWorkers; i++ {
+        go worker(i, done)
+    }
+
+    // Wait for all workers
+    for i := 0; i < numWorkers; i++ {
+        <-done
+    }
+
+    fmt.Println("All workers completed")
+}
+```
+
+### Comparison: WaitGroup vs Channel
+
+| WaitGroup | Channel |
+|-----------|---------|
+| `wg.Add(n)` | Know count ahead of time |
+| `wg.Done()` | `done <- struct{}{}` |
+| `wg.Wait()` | `for i := 0; i < n; i++ { <-done }` |
+
+WaitGroup is simpler for counting. Channels are more flexible and can carry data.
+
+---
+
+## The Select Statement
+
+`select` lets you wait on multiple channel operations:
+
+```go
+select {
+case msg := <-ch1:
+    fmt.Println("Received from ch1:", msg)
+case msg := <-ch2:
+    fmt.Println("Received from ch2:", msg)
+case ch3 <- "hello":
+    fmt.Println("Sent to ch3")
+}
+```
+
+`select` blocks until one case is ready. If multiple are ready, one is chosen randomly.
+
+### Non-Blocking Operations with Default
+
+```go
+select {
+case msg := <-ch:
+    fmt.Println("Received:", msg)
+default:
+    fmt.Println("No message available")
+}
+```
+
+The `default` case runs immediately if no other case is ready.
+
+### Timeout Pattern
+
+```go
+select {
+case result := <-ch:
+    fmt.Println("Got result:", result)
+case <-time.After(3 * time.Second):
+    fmt.Println("Timeout!")
+}
+```
+
+### Select in a Loop
+
+```go
+func main() {
+    ch1 := make(chan string)
+    ch2 := make(chan string)
+    quit := make(chan struct{})
+
+    go func() {
+        time.Sleep(1 * time.Second)
+        ch1 <- "one"
+    }()
+
+    go func() {
+        time.Sleep(2 * time.Second)
+        ch2 <- "two"
+    }()
+
+    go func() {
+        time.Sleep(3 * time.Second)
+        close(quit)
+    }()
+
+    for {
+        select {
+        case msg := <-ch1:
+            fmt.Println("ch1:", msg)
+        case msg := <-ch2:
+            fmt.Println("ch2:", msg)
+        case <-quit:
+            fmt.Println("Quitting")
+            return
+        }
+    }
+}
+```
+
+---
+
+## Common Patterns
+
+### Fan-Out: One Producer, Multiple Consumers
+
+```go
+func main() {
+    jobs := make(chan int, 10)
+    results := make(chan int, 10)
+
+    // Start 3 workers
+    for w := 0; w < 3; w++ {
+        go worker(w, jobs, results)
+    }
+
+    // Send 5 jobs
+    for j := 0; j < 5; j++ {
+        jobs <- j
+    }
+    close(jobs)
+
+    // Collect results
+    for r := 0; r < 5; r++ {
+        fmt.Println(<-results)
+    }
+}
+
+func worker(id int, jobs <-chan int, results chan<- int) {
+    for j := range jobs {
+        results <- j * 2
+    }
+}
+```
+
+### Fan-In: Multiple Producers, One Consumer
+
+```go
+func merge(cs ...<-chan int) <-chan int {
+    out := make(chan int)
+    var wg sync.WaitGroup
+    
+    for _, c := range cs {
+        wg.Add(1)
+        go func(ch <-chan int) {
+            defer wg.Done()
+            for v := range ch {
+                out <- v
+            }
+        }(c)
+    }
+    
+    go func() {
+        wg.Wait()
+        close(out)
+    }()
+    
+    return out
+}
+```
+
+### Pipeline
+
+```go
+func generate(nums ...int) <-chan int {
+    out := make(chan int)
+    go func() {
+        for _, n := range nums {
+            out <- n
+        }
+        close(out)
+    }()
+    return out
+}
+
+func square(in <-chan int) <-chan int {
+    out := make(chan int)
+    go func() {
+        for n := range in {
+            out <- n * n
+        }
+        close(out)
+    }()
+    return out
+}
+
+func main() {
+    c := generate(1, 2, 3, 4)
+    out := square(c)
+    
+    for result := range out {
+        fmt.Println(result)  // 1, 4, 9, 16
+    }
+}
+```
+
+---
+
+## Key Points
+
+1. Channels are for communication between goroutines
+2. Unbuffered channels synchronize sender and receiver (both block until the other is ready)
+3. Buffered channels decouple sender and receiver (block only when full/empty)
+4. Always close channels from the sender side
+5. Use `select` to work with multiple channels
+6. `select` with `default` enables non-blocking operations
+7. Channel direction (`chan<-`, `<-chan`) provides compile-time safety
+8. Receiving from a closed channel returns zero values immediately

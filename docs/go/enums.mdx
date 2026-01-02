@@ -1,0 +1,394 @@
+---
+title: Enums
+description: Creating enum-like types in Go using const and iota
+---
+
+## Go Does Not Have Enums
+
+Unlike languages such as Java, C#, or TypeScript, Go does not have a built-in `enum` keyword. Instead, Go provides patterns using **constants** and **iota** that achieve similar functionality with more flexibility.
+
+---
+
+## Basic Enum Pattern
+
+Create a custom type and define constants of that type:
+
+```go
+type Status int
+
+const (
+    Pending Status = iota  // 0
+    Active                 // 1
+    Completed              // 2
+    Cancelled              // 3
+)
+
+func main() {
+    var orderStatus Status = Active
+    fmt.Println(orderStatus)  // 1
+}
+```
+
+### How iota Works
+
+`iota` is a special constant that starts at `0` and increments by `1` for each constant in the block:
+
+```go
+const (
+    A = iota  // 0
+    B         // 1
+    C         // 2
+    D         // 3
+)
+```
+
+Each new `const` block resets `iota` to `0`:
+
+```go
+const (
+    First = iota  // 0
+    Second        // 1
+)
+
+const (
+    Another = iota  // 0 (reset)
+)
+```
+
+---
+
+## Type Safety with Custom Types
+
+Using a custom type prevents accidental mixing of unrelated values:
+
+```go
+type Day int
+type Month int
+
+const (
+    Monday Day = iota
+    Tuesday
+    Wednesday
+)
+
+const (
+    January Month = iota + 1  // Start at 1
+    February
+    March
+)
+
+func PrintDay(d Day) {
+    fmt.Println("Day:", d)
+}
+
+func main() {
+    PrintDay(Monday)    // Works
+    // PrintDay(January) // Compile error: cannot use January (type Month) as type Day
+}
+```
+
+---
+
+## Starting from a Different Value
+
+You can start the sequence at any value:
+
+```go
+const (
+    StatusOK       = iota + 200  // 200
+    StatusCreated                // 201
+    StatusAccepted               // 202
+)
+```
+
+Or skip values:
+
+```go
+const (
+    _        = iota  // 0 (skipped with blank identifier)
+    KB int64 = 1 << (10 * iota)  // 1 << 10 = 1024
+    MB                           // 1 << 20 = 1,048,576
+    GB                           // 1 << 30
+    TB                           // 1 << 40
+)
+```
+
+---
+
+## String Representations
+
+Enums print as numbers by default. Add a `String()` method for readable output:
+
+```go
+type Status int
+
+const (
+    Pending Status = iota
+    Active
+    Completed
+    Cancelled
+)
+
+func (s Status) String() string {
+    switch s {
+    case Pending:
+        return "Pending"
+    case Active:
+        return "Active"
+    case Completed:
+        return "Completed"
+    case Cancelled:
+        return "Cancelled"
+    default:
+        return "Unknown"
+    }
+}
+
+func main() {
+    status := Active
+    fmt.Println(status)  // Active (not 1)
+}
+```
+
+### Using a Slice for Strings
+
+For simple cases, a slice lookup is cleaner:
+
+```go
+type Status int
+
+const (
+    Pending Status = iota
+    Active
+    Completed
+    Cancelled
+)
+
+var statusNames = []string{"Pending", "Active", "Completed", "Cancelled"}
+
+func (s Status) String() string {
+    if int(s) < len(statusNames) {
+        return statusNames[s]
+    }
+    return "Unknown"
+}
+```
+
+---
+
+## Validation
+
+Check if a value is within the valid range:
+
+```go
+type Size int
+
+const (
+    Small Size = iota
+    Medium
+    Large
+    sizeCount  // unexported, used for validation
+)
+
+func (s Size) IsValid() bool {
+    return s >= Small && s < sizeCount
+}
+
+func main() {
+    size := Size(10)
+    fmt.Println(size.IsValid())  // false
+    
+    size = Medium
+    fmt.Println(size.IsValid())  // true
+}
+```
+
+---
+
+## Bitwise Flags with iota
+
+Use bit shifting for flags that can be combined:
+
+```go
+type Permission int
+
+const (
+    Read Permission = 1 << iota  // 1
+    Write                        // 2
+    Execute                      // 4
+)
+
+func main() {
+    // Combine permissions with OR
+    userPerms := Read | Write
+
+    // Check permissions with AND
+    if userPerms&Read != 0 {
+        fmt.Println("Has read permission")
+    }
+    if userPerms&Execute != 0 {
+        fmt.Println("Has execute permission")
+    } else {
+        fmt.Println("No execute permission")
+    }
+}
+```
+
+### Checking Multiple Flags
+
+```go
+func (p Permission) Has(flag Permission) bool {
+    return p&flag != 0
+}
+
+func (p Permission) String() string {
+    var perms []string
+    if p.Has(Read) {
+        perms = append(perms, "Read")
+    }
+    if p.Has(Write) {
+        perms = append(perms, "Write")
+    }
+    if p.Has(Execute) {
+        perms = append(perms, "Execute")
+    }
+    return strings.Join(perms, "|")
+}
+
+func main() {
+    perms := Read | Execute
+    fmt.Println(perms)  // Read|Execute
+}
+```
+
+---
+
+## Parsing Strings to Enums
+
+To convert strings back to enum values:
+
+```go
+type Status int
+
+const (
+    Pending Status = iota
+    Active
+    Completed
+    Cancelled
+)
+
+func ParseStatus(s string) (Status, error) {
+    switch strings.ToLower(s) {
+    case "pending":
+        return Pending, nil
+    case "active":
+        return Active, nil
+    case "completed":
+        return Completed, nil
+    case "cancelled":
+        return Cancelled, nil
+    default:
+        return 0, fmt.Errorf("unknown status: %s", s)
+    }
+}
+```
+
+### Using a Map for Parsing
+
+```go
+var statusMap = map[string]Status{
+    "pending":   Pending,
+    "active":    Active,
+    "completed": Completed,
+    "cancelled": Cancelled,
+}
+
+func ParseStatus(s string) (Status, bool) {
+    status, ok := statusMap[strings.ToLower(s)]
+    return status, ok
+}
+```
+
+---
+
+## Complete Enum Example
+
+```go
+package main
+
+import (
+    "fmt"
+    "strings"
+)
+
+type OrderStatus int
+
+const (
+    OrderPending OrderStatus = iota
+    OrderProcessing
+    OrderShipped
+    OrderDelivered
+    OrderCancelled
+)
+
+var orderStatusNames = []string{
+    "Pending",
+    "Processing",
+    "Shipped",
+    "Delivered",
+    "Cancelled",
+}
+
+var orderStatusMap = map[string]OrderStatus{
+    "pending":    OrderPending,
+    "processing": OrderProcessing,
+    "shipped":    OrderShipped,
+    "delivered":  OrderDelivered,
+    "cancelled":  OrderCancelled,
+}
+
+func (s OrderStatus) String() string {
+    if int(s) < len(orderStatusNames) {
+        return orderStatusNames[s]
+    }
+    return "Unknown"
+}
+
+func ParseOrderStatus(s string) (OrderStatus, bool) {
+    status, ok := orderStatusMap[strings.ToLower(s)]
+    return status, ok
+}
+
+func (s OrderStatus) IsTerminal() bool {
+    return s == OrderDelivered || s == OrderCancelled
+}
+
+func main() {
+    status := OrderShipped
+    fmt.Printf("Status: %s (%d)\n", status, status)
+    fmt.Printf("Is terminal: %v\n", status.IsTerminal())
+
+    parsed, ok := ParseOrderStatus("delivered")
+    if ok {
+        fmt.Printf("Parsed: %s\n", parsed)
+    }
+}
+```
+
+Output:
+```
+Status: Shipped (2)
+Is terminal: false
+Parsed: Delivered
+```
+
+---
+
+## Key Points
+
+1. Go uses `const` blocks with `iota` instead of a dedicated enum keyword
+2. Create a custom type for type safety
+3. `iota` resets to 0 in each new const block
+4. Add a `String()` method for readable output
+5. Use bit shifting (`1 << iota`) for combinable flags
+6. Always handle unknown/invalid values in String and Parse methods

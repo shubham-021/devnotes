@@ -1,0 +1,384 @@
+---
+title: Zero Values
+description: Understanding default values and the difference between zero values and nil in Go
+---
+
+## What Are Zero Values?
+
+In Go, every variable has a value. If you declare a variable without initializing it, Go assigns a **zero value** based on its type. There is no concept of "uninitialized memory" as in C.
+
+```go
+var name string   // ""
+var age int       // 0
+var active bool   // false
+```
+
+This design choice prevents bugs from uninitialized variables and makes Go programs safer by default.
+
+---
+
+## Zero Values by Type
+
+### Numeric Types
+
+All numeric types default to `0`:
+
+```go
+var i int       // 0
+var i8 int8     // 0
+var i16 int16   // 0
+var i32 int32   // 0
+var i64 int64   // 0
+
+var u uint      // 0
+var u8 uint8    // 0 (also called byte)
+var u16 uint16  // 0
+var u32 uint32  // 0
+var u64 uint64  // 0
+
+var f32 float32 // 0.0
+var f64 float64 // 0.0
+
+var c64 complex64   // (0+0i)
+var c128 complex128 // (0+0i)
+```
+
+### Strings
+
+Strings default to an empty string:
+
+```go
+var s string  // ""
+fmt.Println(len(s))  // 0
+fmt.Println(s == "") // true
+```
+
+### Booleans
+
+Booleans default to `false`:
+
+```go
+var b bool  // false
+```
+
+### Pointers
+
+Pointers default to `nil`:
+
+```go
+var p *int  // nil
+fmt.Println(p == nil)  // true
+
+// Dereferencing a nil pointer causes a panic
+// fmt.Println(*p)  // PANIC: nil pointer dereference
+```
+
+### Slices
+
+Slices default to `nil`, but can still be used with `append`:
+
+```go
+var s []int  // nil
+fmt.Println(s == nil)  // true
+fmt.Println(len(s))    // 0
+
+s = append(s, 1, 2, 3)  // Works!
+fmt.Println(s)          // [1 2 3]
+```
+
+### Maps
+
+Maps default to `nil`. Unlike slices, you cannot write to a `nil` map:
+
+```go
+var m map[string]int  // nil
+fmt.Println(m == nil) // true
+
+// Reading returns the zero value for the value type
+fmt.Println(m["key"]) // 0
+
+// Writing to a nil map causes a panic
+// m["key"] = 1  // PANIC: assignment to entry in nil map
+
+// Must initialize before writing
+m = make(map[string]int)
+m["key"] = 1  // Works
+```
+
+### Channels
+
+Channels default to `nil`. Operations on `nil` channels block forever:
+
+```go
+var ch chan int  // nil
+fmt.Println(ch == nil)  // true
+
+// These would block forever (deadlock):
+// ch <- 1   // Sending to nil channel
+// <-ch      // Receiving from nil channel
+```
+
+### Structs
+
+Struct fields are initialized to their respective zero values:
+
+```go
+type User struct {
+    Name    string
+    Age     int
+    Active  bool
+    Manager *User
+}
+
+var u User
+fmt.Println(u.Name)     // ""
+fmt.Println(u.Age)      // 0
+fmt.Println(u.Active)   // false
+fmt.Println(u.Manager)  // <nil>
+```
+
+### Arrays
+
+Array elements are initialized to zero values:
+
+```go
+var arr [3]int
+fmt.Println(arr)  // [0 0 0]
+
+var arr2 [2]string
+fmt.Println(arr2)  // ["" ""]
+```
+
+### Interfaces
+
+Interfaces default to `nil`:
+
+```go
+var i interface{}  // nil
+var err error      // nil (error is an interface)
+
+fmt.Println(i == nil)    // true
+fmt.Println(err == nil)  // true
+```
+
+### Functions
+
+Function variables default to `nil`:
+
+```go
+var fn func(int) int  // nil
+fmt.Println(fn == nil)  // true
+
+// Calling a nil function causes a panic
+// fn(5)  // PANIC
+```
+
+---
+
+## Zero Value Summary Table
+
+| Type | Zero Value |
+|------|------------|
+| `int`, `int8`, `int16`, `int32`, `int64` | `0` |
+| `uint`, `uint8`, `uint16`, `uint32`, `uint64` | `0` |
+| `float32`, `float64` | `0.0` |
+| `complex64`, `complex128` | `(0+0i)` |
+| `bool` | `false` |
+| `string` | `""` (empty string) |
+| `pointer` | `nil` |
+| `slice` | `nil` |
+| `map` | `nil` |
+| `channel` | `nil` |
+| `function` | `nil` |
+| `interface` | `nil` |
+| `struct` | All fields set to their zero values |
+| `array` | All elements set to their zero values |
+
+---
+
+## Zero Value vs nil
+
+This is a crucial distinction in Go:
+
+### nil is a Zero Value for Reference Types Only
+
+`nil` is the zero value for pointers, slices, maps, channels, functions, and interfaces. It is NOT the zero value for strings, numbers, booleans, or structs.
+
+```go
+// These are nil
+var p *int          // nil
+var s []int         // nil
+var m map[int]int   // nil
+var ch chan int     // nil
+var fn func()       // nil
+var i interface{}   // nil
+
+// These are NOT nil (they are zero values, but not nil)
+var str string      // "" (empty string, not nil)
+var num int         // 0 (not nil)
+var b bool          // false (not nil)
+var u User          // zero-valued struct (not nil)
+```
+
+### You Cannot Compare Non-Reference Types to nil
+
+```go
+var s string
+// if s == nil { }  // Compile error: cannot compare string to nil
+
+// Correct way
+if s == "" {
+    fmt.Println("empty string")
+}
+
+var n int
+// if n == nil { }  // Compile error
+
+// Correct way
+if n == 0 {
+    fmt.Println("zero")
+}
+```
+
+---
+
+## Practical Implications
+
+### Slices: nil vs Empty
+
+A `nil` slice and an empty slice behave similarly but are not identical:
+
+```go
+var nilSlice []int          // nil
+emptySlice := []int{}       // not nil, but empty
+madeSlice := make([]int, 0) // not nil, but empty
+
+fmt.Println(nilSlice == nil)    // true
+fmt.Println(emptySlice == nil)  // false
+fmt.Println(madeSlice == nil)   // false
+
+// All have length 0
+fmt.Println(len(nilSlice))    // 0
+fmt.Println(len(emptySlice))  // 0
+fmt.Println(len(madeSlice))   // 0
+
+// All work with append
+nilSlice = append(nilSlice, 1)
+emptySlice = append(emptySlice, 1)
+```
+
+When returning slices, prefer returning `nil` over an empty slice for "no results":
+
+```go
+func findUsers(query string) []User {
+    // ... search logic
+    if len(results) == 0 {
+        return nil  // Idiomatic
+    }
+    return results
+}
+```
+
+### Maps: Must Initialize Before Writing
+
+```go
+// WRONG: will panic
+var scores map[string]int
+scores["alice"] = 100  // PANIC
+
+// CORRECT: initialize first
+scores := make(map[string]int)
+scores["alice"] = 100  // OK
+
+// Also correct: composite literal
+scores := map[string]int{
+    "alice": 100,
+}
+```
+
+### Using Zero Values as Defaults
+
+Zero values are useful defaults:
+
+```go
+type Config struct {
+    Host    string
+    Port    int
+    Timeout time.Duration
+    Debug   bool
+}
+
+func NewServer(cfg Config) *Server {
+    // Zero values work as sensible defaults
+    if cfg.Host == "" {
+        cfg.Host = "localhost"
+    }
+    if cfg.Port == 0 {
+        cfg.Port = 8080
+    }
+    if cfg.Timeout == 0 {
+        cfg.Timeout = 30 * time.Second
+    }
+    // cfg.Debug defaults to false, which is usually what we want
+    // ...
+}
+
+// Can be called with partial config
+server := NewServer(Config{Port: 3000})
+```
+
+---
+
+## The Interface nil Gotcha
+
+An interface is `nil` only when both its type and value are `nil`:
+
+```go
+type MyError struct {
+    msg string
+}
+
+func (e *MyError) Error() string {
+    return e.msg
+}
+
+func getError(fail bool) error {
+    var err *MyError = nil  // Typed nil pointer
+    if fail {
+        err = &MyError{"something went wrong"}
+    }
+    return err  // Returns interface containing (*MyError, nil)
+}
+
+func main() {
+    err := getError(false)
+    
+    // This is FALSE, even though err holds nil!
+    fmt.Println(err == nil)  // false
+    
+    // The interface holds: (type: *MyError, value: nil)
+    // It's not a nil interface, it's an interface holding a nil pointer
+}
+```
+
+To avoid this, return `nil` directly:
+
+```go
+func getError(fail bool) error {
+    if fail {
+        return &MyError{"something went wrong"}
+    }
+    return nil  // Return untyped nil
+}
+```
+
+---
+
+## Key Points
+
+1. Every type in Go has a zero value; there are no uninitialized variables
+2. `nil` is the zero value only for pointers, slices, maps, channels, functions, and interfaces
+3. Strings zero to `""`, numbers to `0`, booleans to `false`
+4. A `nil` slice is usable with `append`, but a `nil` map will panic on write
+5. Zero values enable useful patterns like optional configuration
+6. Be careful with interface nil comparisons due to the typed-nil gotcha

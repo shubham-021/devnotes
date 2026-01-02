@@ -87,3 +87,89 @@ Common format verbs:
 Go enforces better code quality at compile time:
 - Variable names must be used (unused variables cause errors)
 - Imported packages must be used (unused imports cause errors)
+
+---
+
+## Declaring Multiple Variables
+
+You can declare multiple variables of the same type in one line:
+
+```go
+var a, b, c int           // All are int, all zero-valued
+var x, y, z int = 1, 2, 3  // With values
+
+// Short declaration
+name, age := "Alice", 30
+```
+
+### Multiple Variables of Different Types
+
+You cannot mix types on a single line without assigning values:
+
+```go
+// This works - type is inferred from values
+name, age, active := "Alice", 30, true
+
+// This does NOT work
+// var a, b int, string  // Compile error
+```
+
+---
+
+## Grouping Declarations with Parentheses
+
+Group related declarations using parentheses for cleaner code.
+
+### Var Block
+
+```go
+var (
+    name    string
+    age     int
+    active  bool
+    balance float64 = 100.0
+)
+```
+
+### Const Block
+
+```go
+const (
+    StatusPending   = "pending"
+    StatusActive    = "active"
+    StatusCompleted = "completed"
+)
+```
+
+With `iota` for sequential values:
+
+```go
+const (
+    Sunday = iota  // 0
+    Monday         // 1
+    Tuesday        // 2
+    Wednesday      // 3
+    Thursday       // 4
+    Friday         // 5
+    Saturday       // 6
+)
+```
+
+### Import Block
+
+```go
+import (
+    "fmt"
+    "os"
+    "strings"
+    
+    "github.com/some/package"
+)
+```
+
+### Benefits of Grouping
+
+1. Cleaner, more organized code
+2. Shows related items belong together
+3. Easier to add/remove items
+4. Standard Go style (gofmt will group for you)

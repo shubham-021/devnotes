@@ -1,0 +1,395 @@
+---
+title: Closures
+description: Understanding closures, capturing variables, and common patterns in Go
+---
+
+## What is a Closure?
+
+A closure is a function that **captures** variables from its surrounding scope. The function "remembers" these variables even after the outer function has returned.
+
+```go
+func main() {
+    message := "Hello"
+
+    // This anonymous function is a closure
+    greet := func() {
+        fmt.Println(message)  // Captures 'message' from outer scope
+    }
+
+    greet()  // Hello
+}
+```
+
+---
+
+## Functions Are First-Class Citizens
+
+In Go, functions can be:
+- Assigned to variables
+- Passed as arguments
+- Returned from other functions
+
+```go
+// Assign to variable
+add := func(a, b int) int {
+    return a + b
+}
+
+// Use like any other function
+result := add(3, 4)  // 7
+```
+
+---
+
+## Capturing by Reference
+
+Closures capture variables by reference, not by value. This means changes to the variable are visible inside the closure:
+
+```go
+func main() {
+    count := 0
+
+    increment := func() {
+        count++  // Modifies the outer 'count'
+    }
+
+    increment()
+    increment()
+    increment()
+
+    fmt.Println(count)  // 3
+}
+```
+
+The closure and the outer scope share the same `count` variable.
+
+---
+
+## Function Factories
+
+A common pattern is returning a closure that maintains state:
+
+```go
+func counter() func() int {
+    count := 0
+    return func() int {
+        count++
+        return count
+    }
+}
+
+func main() {
+    next := counter()
+    
+    fmt.Println(next())  // 1
+    fmt.Println(next())  // 2
+    fmt.Println(next())  // 3
+
+    // New counter, independent state
+    another := counter()
+    fmt.Println(another())  // 1
+}
+```
+
+Each call to `counter()` creates a new closure with its own captured `count` variable.
+
+---
+
+## Practical Examples
+
+### Configurable Functions
+
+Create specialized versions of a function:
+
+```go
+func multiplier(factor int) func(int) int {
+    return func(x int) int {
+        return x * factor
+    }
+}
+
+func main() {
+    double := multiplier(2)
+    triple := multiplier(3)
+
+    fmt.Println(double(5))  // 10
+    fmt.Println(triple(5))  // 15
+}
+```
+
+### Accumulator
+
+```go
+func accumulator(initial int) func(int) int {
+    sum := initial
+    return func(x int) int {
+        sum += x
+        return sum
+    }
+}
+
+func main() {
+    acc := accumulator(10)
+    
+    fmt.Println(acc(5))   // 15
+    fmt.Println(acc(3))   // 18
+    fmt.Println(acc(2))   // 20
+}
+```
+
+### Memoization
+
+Cache expensive computations:
+
+```go
+func memoizedFibonacci() func(int) int {
+    cache := make(map[int]int)
+    
+    var fib func(int) int
+    fib = func(n int) int {
+        if n <= 1 {
+            return n
+        }
+        if val, ok := cache[n]; ok {
+            return val
+        }
+        cache[n] = fib(n-1) + fib(n-2)
+        return cache[n]
+    }
+    
+    return fib
+}
+
+func main() {
+    fib := memoizedFibonacci()
+    fmt.Println(fib(40))  // Fast due to caching
+}
+```
+
+---
+
+## Callbacks
+
+Pass closures as callbacks to customize behavior:
+
+```go
+func processNumbers(nums []int, callback func(int) int) []int {
+    result := make([]int, len(nums))
+    for i, n := range nums {
+        result[i] = callback(n)
+    }
+    return result
+}
+
+func main() {
+    numbers := []int{1, 2, 3, 4, 5}
+    
+    // Double all numbers
+    doubled := processNumbers(numbers, func(n int) int {
+        return n * 2
+    })
+    fmt.Println(doubled)  // [2 4 6 8 10]
+    
+    // Square all numbers
+    squared := processNumbers(numbers, func(n int) int {
+        return n * n
+    })
+    fmt.Println(squared)  // [1 4 9 16 25]
+}
+```
+
+---
+
+## The Loop Variable Trap
+
+A common mistake when using closures in loops:
+
+### The Problem
+
+```go
+func main() {
+    funcs := []func(){}
+
+    for i := 0; i < 3; i++ {
+        funcs = append(funcs, func() {
+            fmt.Println(i)  // Captures the variable 'i', not its value
+        })
+    }
+
+    for _, f := range funcs {
+        f()
+    }
+}
+// Output: 3, 3, 3 (not 0, 1, 2!)
+```
+
+All closures capture the same `i` variable, which has value `3` after the loop ends.
+
+### Solution 1: Create a New Variable
+
+```go
+for i := 0; i < 3; i++ {
+    i := i  // Create a new 'i' scoped to this iteration
+    funcs = append(funcs, func() {
+        fmt.Println(i)
+    })
+}
+// Output: 0, 1, 2
+```
+
+### Solution 2: Pass as Parameter
+
+```go
+for i := 0; i < 3; i++ {
+    funcs = append(funcs, func(n int) func() {
+        return func() {
+            fmt.Println(n)
+        }
+    }(i))  // Pass 'i' as argument
+}
+// Output: 0, 1, 2
+```
+
+### Goroutines and Loop Variables
+
+The same issue occurs with goroutines:
+
+```go
+// WRONG
+for i := 0; i < 3; i++ {
+    go func() {
+        fmt.Println(i)  // Race condition, unpredictable output
+    }()
+}
+
+// CORRECT
+for i := 0; i < 3; i++ {
+    i := i  // Capture copy
+    go func() {
+        fmt.Println(i)
+    }()
+}
+
+// ALSO CORRECT
+for i := 0; i < 3; i++ {
+    go func(n int) {
+        fmt.Println(n)
+    }(i)  // Pass as argument
+}
+```
+
+---
+
+## Deferred Closures
+
+Closures work with `defer`, but remember that captured variables are evaluated when the closure runs, not when it's defined:
+
+```go
+func main() {
+    x := 10
+    defer func() {
+        fmt.Println("deferred:", x)  // Will print 20
+    }()
+    
+    x = 20
+    fmt.Println("main:", x)
+}
+// Output:
+// main: 20
+// deferred: 20
+```
+
+To capture the value at defer time, pass it as a parameter:
+
+```go
+func main() {
+    x := 10
+    defer func(val int) {
+        fmt.Println("deferred:", val)  // Will print 10
+    }(x)  // x is evaluated now
+    
+    x = 20
+    fmt.Println("main:", x)
+}
+// Output:
+// main: 20
+// deferred: 10
+```
+
+---
+
+## Closures for Cleanup
+
+Use closures to manage resources:
+
+```go
+func withFile(filename string, fn func(*os.File) error) error {
+    file, err := os.Open(filename)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+    
+    return fn(file)
+}
+
+func main() {
+    err := withFile("data.txt", func(f *os.File) error {
+        // Work with file
+        scanner := bufio.NewScanner(f)
+        for scanner.Scan() {
+            fmt.Println(scanner.Text())
+        }
+        return scanner.Err()
+    })
+    
+    if err != nil {
+        fmt.Println("Error:", err)
+    }
+}
+```
+
+---
+
+## Method Values as Closures
+
+Method values are closures that capture the receiver:
+
+```go
+type Counter struct {
+    value int
+}
+
+func (c *Counter) Increment() {
+    c.value++
+}
+
+func (c *Counter) Value() int {
+    return c.value
+}
+
+func main() {
+    c := &Counter{}
+    
+    // Create closures from methods
+    inc := c.Increment
+    val := c.Value
+    
+    inc()
+    inc()
+    inc()
+    
+    fmt.Println(val())  // 3
+}
+```
+
+---
+
+## Key Points
+
+1. Closures capture variables from their enclosing scope
+2. Variables are captured by reference, not by value
+3. Each closure gets its own copy of captured state when created by a factory function
+4. Watch out for loop variable capture in goroutines and deferred functions
+5. Use `i := i` or pass as parameter to fix loop variable issues
+6. Closures are useful for callbacks, factories, and maintaining state

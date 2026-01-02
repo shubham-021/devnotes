@@ -1,0 +1,501 @@
+---
+title: File Handling
+description: Reading and writing files using os, bufio, and io packages
+---
+
+## Reading Entire Files
+
+### os.ReadFile (Simple)
+
+The easiest way to read a file into memory:
+
+```go
+import "os"
+
+func main() {
+    data, err := os.ReadFile("data.txt")
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    
+    content := string(data)
+    fmt.Println(content)
+}
+```
+
+Suitable for small files. Loads entire file into memory.
+
+---
+
+## Writing Entire Files
+
+### os.WriteFile (Simple)
+
+Write data to a file, creating it if necessary:
+
+```go
+content := []byte("Hello, World!\n")
+
+err := os.WriteFile("output.txt", content, 0644)
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+```
+
+The `0644` is the file permission (owner read/write, others read-only).
+
+---
+
+## Working with File Handles
+
+For more control, open files explicitly:
+
+### Opening Files
+
+```go
+// Read-only
+file, err := os.Open("data.txt")
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+defer file.Close()
+```
+
+### Creating Files
+
+```go
+// Create or truncate
+file, err := os.Create("output.txt")
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+defer file.Close()
+```
+
+### Opening with Flags
+
+```go
+file, err := os.OpenFile("log.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+defer file.Close()
+```
+
+Common flags:
+
+| Flag | Description |
+|------|-------------|
+| `os.O_RDONLY` | Read-only |
+| `os.O_WRONLY` | Write-only |
+| `os.O_RDWR` | Read and write |
+| `os.O_APPEND` | Append to file |
+| `os.O_CREATE` | Create if not exists |
+| `os.O_TRUNC` | Truncate if exists |
+
+---
+
+## Reading Line by Line
+
+### Using bufio.Scanner
+
+```go
+file, err := os.Open("data.txt")
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+defer file.Close()
+
+scanner := bufio.NewScanner(file)
+lineNumber := 0
+
+for scanner.Scan() {
+    lineNumber++
+    line := scanner.Text()
+    fmt.Printf("%d: %s\n", lineNumber, line)
+}
+
+if err := scanner.Err(); err != nil {
+    fmt.Println("Error reading:", err)
+}
+```
+
+### Using bufio.Reader
+
+For more control over the delimiter:
+
+```go
+file, err := os.Open("data.txt")
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+defer file.Close()
+
+reader := bufio.NewReader(file)
+
+for {
+    line, err := reader.ReadString('\n')
+    if err != nil {
+        if err == io.EOF {
+            break
+        }
+        fmt.Println("Error:", err)
+        return
+    }
+    fmt.Print(line)
+}
+```
+
+---
+
+## Writing to Files
+
+### Using File.WriteString
+
+```go
+file, err := os.Create("output.txt")
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+defer file.Close()
+
+file.WriteString("First line\n")
+file.WriteString("Second line\n")
+```
+
+### Using bufio.Writer (Buffered)
+
+More efficient for many small writes:
+
+```go
+file, err := os.Create("output.txt")
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+defer file.Close()
+
+writer := bufio.NewWriter(file)
+writer.WriteString("Line 1\n")
+writer.WriteString("Line 2\n")
+writer.WriteString("Line 3\n")
+
+writer.Flush()  // Important: write buffered data to file
+```
+
+### Using fmt.Fprintf
+
+Write formatted output:
+
+```go
+file, err := os.Create("output.txt")
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+defer file.Close()
+
+name := "Alice"
+age := 30
+fmt.Fprintf(file, "Name: %s, Age: %d\n", name, age)
+```
+
+---
+
+## The Importance of Defer Close
+
+Always close files to release resources:
+
+```go
+file, err := os.Open("data.txt")
+if err != nil {
+    return err
+}
+defer file.Close()  // Guaranteed to run when function returns
+
+// Use file...
+```
+
+Without `defer`, you might forget to close:
+
+```go
+// BAD: If error occurs below, file is never closed
+file, err := os.Open("data.txt")
+if err != nil {
+    return err
+}
+
+if someCondition {
+    return nil  // File not closed!
+}
+
+file.Close()
+```
+
+---
+
+## Checking If File Exists
+
+```go
+func fileExists(path string) bool {
+    _, err := os.Stat(path)
+    return !os.IsNotExist(err)
+}
+
+if fileExists("config.json") {
+    fmt.Println("Config exists")
+} else {
+    fmt.Println("Config not found")
+}
+```
+
+### Getting File Info
+
+```go
+info, err := os.Stat("data.txt")
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+
+fmt.Println("Name:", info.Name())
+fmt.Println("Size:", info.Size(), "bytes")
+fmt.Println("Modified:", info.ModTime())
+fmt.Println("Is Dir:", info.IsDir())
+```
+
+---
+
+## Working with Directories
+
+### Creating Directories
+
+```go
+// Create single directory
+err := os.Mkdir("mydir", 0755)
+
+// Create nested directories
+err := os.MkdirAll("path/to/nested/dir", 0755)
+```
+
+### Reading Directory Contents
+
+```go
+entries, err := os.ReadDir(".")
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+
+for _, entry := range entries {
+    if entry.IsDir() {
+        fmt.Printf("[DIR]  %s\n", entry.Name())
+    } else {
+        fmt.Printf("[FILE] %s\n", entry.Name())
+    }
+}
+```
+
+### Removing Files and Directories
+
+```go
+// Remove file
+err := os.Remove("file.txt")
+
+// Remove directory (must be empty)
+err := os.Remove("mydir")
+
+// Remove directory and contents
+err := os.RemoveAll("mydir")
+```
+
+---
+
+## Copying Files
+
+Go does not have a built-in copy function. Use `io.Copy`:
+
+```go
+func copyFile(src, dst string) error {
+    source, err := os.Open(src)
+    if err != nil {
+        return err
+    }
+    defer source.Close()
+
+    destination, err := os.Create(dst)
+    if err != nil {
+        return err
+    }
+    defer destination.Close()
+
+    _, err = io.Copy(destination, source)
+    return err
+}
+```
+
+---
+
+## Reading and Writing JSON
+
+### Reading JSON
+
+```go
+type Config struct {
+    Host string `json:"host"`
+    Port int    `json:"port"`
+}
+
+file, err := os.Open("config.json")
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+defer file.Close()
+
+var config Config
+decoder := json.NewDecoder(file)
+if err := decoder.Decode(&config); err != nil {
+    fmt.Println("Error decoding:", err)
+    return
+}
+
+fmt.Printf("Host: %s, Port: %d\n", config.Host, config.Port)
+```
+
+### Writing JSON
+
+```go
+config := Config{
+    Host: "localhost",
+    Port: 8080,
+}
+
+file, err := os.Create("config.json")
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+defer file.Close()
+
+encoder := json.NewEncoder(file)
+encoder.SetIndent("", "  ")  // Pretty print
+if err := encoder.Encode(config); err != nil {
+    fmt.Println("Error encoding:", err)
+}
+```
+
+---
+
+## Temporary Files
+
+```go
+// Create temp file
+tempFile, err := os.CreateTemp("", "prefix-*.txt")
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+defer os.Remove(tempFile.Name())  // Clean up
+defer tempFile.Close()
+
+fmt.Println("Temp file:", tempFile.Name())
+tempFile.WriteString("temporary data")
+```
+
+### Temporary Directories
+
+```go
+tempDir, err := os.MkdirTemp("", "myapp-")
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+defer os.RemoveAll(tempDir)
+
+fmt.Println("Temp dir:", tempDir)
+```
+
+---
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "bufio"
+    "fmt"
+    "os"
+)
+
+func main() {
+    // Write
+    if err := writeLines("data.txt", []string{"Line 1", "Line 2", "Line 3"}); err != nil {
+        fmt.Println("Write error:", err)
+        return
+    }
+
+    // Read
+    lines, err := readLines("data.txt")
+    if err != nil {
+        fmt.Println("Read error:", err)
+        return
+    }
+
+    for i, line := range lines {
+        fmt.Printf("%d: %s\n", i+1, line)
+    }
+}
+
+func readLines(path string) ([]string, error) {
+    file, err := os.Open(path)
+    if err != nil {
+        return nil, err
+    }
+    defer file.Close()
+
+    var lines []string
+    scanner := bufio.NewScanner(file)
+    for scanner.Scan() {
+        lines = append(lines, scanner.Text())
+    }
+
+    return lines, scanner.Err()
+}
+
+func writeLines(path string, lines []string) error {
+    file, err := os.Create(path)
+    if err != nil {
+        return err
+    }
+    defer file.Close()
+
+    writer := bufio.NewWriter(file)
+    for _, line := range lines {
+        fmt.Fprintln(writer, line)
+    }
+
+    return writer.Flush()
+}
+```
+
+---
+
+## Key Points
+
+1. Use `os.ReadFile` and `os.WriteFile` for simple operations on small files
+2. Use `os.Open`, `os.Create`, `os.OpenFile` for fine-grained control
+3. Always use `defer file.Close()` to prevent resource leaks
+4. Use `bufio.Scanner` for line-by-line reading
+5. Use `bufio.Writer` and remember to `Flush()` for efficient buffered writes
+6. Check errors from `Stat` using `os.IsNotExist(err)` to detect missing files
+7. Use `os.MkdirAll` to create nested directories

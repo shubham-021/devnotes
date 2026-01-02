@@ -1,0 +1,521 @@
+---
+title: Standard Library
+description: Quick reference for commonly used Go packages
+---
+
+## time Package
+
+The `time` package provides functionality for measuring and displaying time.
+
+### Getting Current Time
+
+```go
+import "time"
+
+now := time.Now()
+fmt.Println(now)  // 2024-01-15 14:30:45.123456789 +0530 IST
+
+// Access components
+fmt.Println(now.Year())    // 2024
+fmt.Println(now.Month())   // January
+fmt.Println(now.Day())     // 15
+fmt.Println(now.Hour())    // 14
+fmt.Println(now.Minute())  // 30
+fmt.Println(now.Second())  // 45
+```
+
+### Duration
+
+```go
+// Create durations
+d1 := 5 * time.Second
+d2 := 100 * time.Millisecond
+d3 := 2 * time.Hour
+
+// Duration arithmetic
+total := d1 + d2
+fmt.Println(total)  // 5.1s
+```
+
+### Sleeping
+
+```go
+fmt.Println("Start")
+time.Sleep(2 * time.Second)
+fmt.Println("After 2 seconds")
+```
+
+### Formatting Time
+
+Go uses a unique reference time: `Mon Jan 2 15:04:05 MST 2006`
+
+```go
+now := time.Now()
+
+// Custom format
+fmt.Println(now.Format("2006-01-02"))           // 2024-01-15
+fmt.Println(now.Format("02/01/2006 15:04:05"))  // 15/01/2024 14:30:45
+fmt.Println(now.Format(time.RFC3339))           // 2024-01-15T14:30:45+05:30
+```
+
+### Parsing Time
+
+```go
+t, err := time.Parse("2006-01-02", "2024-01-15")
+if err != nil {
+    fmt.Println(err)
+    return
+}
+fmt.Println(t)
+```
+
+### Time Comparisons
+
+```go
+t1 := time.Now()
+t2 := t1.Add(1 * time.Hour)
+
+fmt.Println(t1.Before(t2))  // true
+fmt.Println(t1.After(t2))   // false
+fmt.Println(t1.Equal(t1))   // true
+
+diff := t2.Sub(t1)
+fmt.Println(diff)  // 1h0m0s
+```
+
+### Timers and Tickers
+
+```go
+// Timer: fires once after duration
+timer := time.NewTimer(2 * time.Second)
+<-timer.C  // Blocks until timer fires
+fmt.Println("Timer fired")
+
+// Ticker: fires repeatedly
+ticker := time.NewTicker(500 * time.Millisecond)
+defer ticker.Stop()
+
+for i := 0; i < 5; i++ {
+    <-ticker.C
+    fmt.Println("Tick", i)
+}
+```
+
+---
+
+## rand Package
+
+Generate random numbers. For cryptographic use, use `crypto/rand` instead.
+
+### Basic Random Numbers
+
+```go
+import "math/rand"
+
+// Random int (0 to max int)
+n := rand.Int()
+
+// Random int in range [0, n)
+n := rand.Intn(100)  // 0 to 99
+
+// Random float [0.0, 1.0)
+f := rand.Float64()
+```
+
+### Seeding (Before Go 1.20)
+
+```go
+rand.Seed(time.Now().UnixNano())  // Deprecated in Go 1.20+
+```
+
+In Go 1.20+, the global random source is automatically seeded.
+
+### Random from Range
+
+```go
+// Random int between min and max (inclusive)
+func randomRange(min, max int) int {
+    return rand.Intn(max-min+1) + min
+}
+
+n := randomRange(10, 20)  // 10 to 20
+```
+
+### Shuffling
+
+```go
+items := []string{"a", "b", "c", "d", "e"}
+rand.Shuffle(len(items), func(i, j int) {
+    items[i], items[j] = items[j], items[i]
+})
+fmt.Println(items)  // Random order
+```
+
+### Random Choice
+
+```go
+choices := []string{"apple", "banana", "cherry"}
+choice := choices[rand.Intn(len(choices))]
+```
+
+---
+
+## strconv Package
+
+Convert between strings and other types.
+
+### String to Int
+
+```go
+import "strconv"
+
+s := "42"
+i, err := strconv.Atoi(s)
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+fmt.Println(i + 1)  // 43
+```
+
+### Int to String
+
+```go
+i := 42
+s := strconv.Itoa(i)
+fmt.Println("The answer is " + s)
+```
+
+### Parse Functions
+
+```go
+// String to int64 with base and bit size
+i64, err := strconv.ParseInt("42", 10, 64)
+
+// String to uint64
+u64, err := strconv.ParseUint("42", 10, 64)
+
+// String to float64
+f64, err := strconv.ParseFloat("3.14159", 64)
+
+// String to bool
+b, err := strconv.ParseBool("true")  // true, false, 1, 0
+```
+
+### Format Functions
+
+```go
+// Int64 to string with base
+s := strconv.FormatInt(255, 16)  // "ff"
+
+// Float to string
+s := strconv.FormatFloat(3.14159, 'f', 2, 64)  // "3.14"
+
+// Bool to string
+s := strconv.FormatBool(true)  // "true"
+```
+
+### Quick Reference
+
+| Function | Description | Example |
+|----------|-------------|---------|
+| `Atoi(s)` | String to int | `"42"` to `42` |
+| `Itoa(i)` | Int to string | `42` to `"42"` |
+| `ParseInt(s, base, bits)` | String to int64 | Hex, binary, etc. |
+| `ParseFloat(s, bits)` | String to float | `"3.14"` to `3.14` |
+| `ParseBool(s)` | String to bool | `"true"` to `true` |
+| `FormatInt(i, base)` | Int64 to string | Any base |
+| `FormatFloat(f, fmt, prec, bits)` | Float to string | Precision control |
+
+---
+
+## strings Package
+
+String manipulation utilities.
+
+### Common Operations
+
+```go
+import "strings"
+
+s := "Hello, World!"
+
+// Case conversion
+strings.ToUpper(s)     // "HELLO, WORLD!"
+strings.ToLower(s)     // "hello, world!"
+strings.Title(s)       // "Hello, World!" (deprecated, use cases.Title)
+
+// Trimming
+strings.TrimSpace("  hello  ")       // "hello"
+strings.Trim("...hello...", ".")     // "hello"
+strings.TrimPrefix("hello", "hel")   // "lo"
+strings.TrimSuffix("hello", "lo")    // "hel"
+
+// Searching
+strings.Contains(s, "World")   // true
+strings.HasPrefix(s, "Hello")  // true
+strings.HasSuffix(s, "!")      // true
+strings.Index(s, "World")      // 7
+
+// Counting
+strings.Count("banana", "a")  // 3
+
+// Replacing
+strings.Replace("aaa", "a", "b", 2)   // "bba" (replace 2)
+strings.ReplaceAll("aaa", "a", "b")   // "bbb"
+```
+
+### Split and Join
+
+```go
+// Split
+parts := strings.Split("a,b,c", ",")  // []string{"a", "b", "c"}
+
+// Split with limit
+parts := strings.SplitN("a,b,c,d", ",", 2)  // []string{"a", "b,c,d"}
+
+// Join
+words := []string{"hello", "world"}
+result := strings.Join(words, " ")  // "hello world"
+```
+
+### Building Strings
+
+Use `strings.Builder` for efficient concatenation:
+
+```go
+var builder strings.Builder
+builder.WriteString("Hello")
+builder.WriteString(", ")
+builder.WriteString("World!")
+result := builder.String()  // "Hello, World!"
+```
+
+---
+
+## os Package
+
+Operating system functionality.
+
+### Environment Variables
+
+```go
+import "os"
+
+// Get
+path := os.Getenv("PATH")
+home := os.Getenv("HOME")
+
+// Get with default
+port := os.Getenv("PORT")
+if port == "" {
+    port = "8080"
+}
+
+// Set
+os.Setenv("MY_VAR", "value")
+
+// Check if set
+value, exists := os.LookupEnv("MY_VAR")
+if exists {
+    fmt.Println("Value:", value)
+}
+```
+
+### Command Line Arguments
+
+```go
+args := os.Args          // All args including program name
+programName := os.Args[0]
+arguments := os.Args[1:]  // Just the arguments
+
+// go run main.go foo bar
+// os.Args = ["main", "foo", "bar"]
+```
+
+### Working Directory
+
+```go
+// Get current directory
+dir, err := os.Getwd()
+if err != nil {
+    fmt.Println(err)
+    return
+}
+fmt.Println("Current directory:", dir)
+
+// Change directory
+err = os.Chdir("/tmp")
+```
+
+### Exit
+
+```go
+os.Exit(0)  // Success
+os.Exit(1)  // Error
+```
+
+### Standard Streams
+
+```go
+os.Stdin   // Standard input
+os.Stdout  // Standard output
+os.Stderr  // Standard error
+```
+
+---
+
+## io Package
+
+Basic I/O interfaces.
+
+### Reader and Writer Interfaces
+
+```go
+// Reader: anything you can read from
+type Reader interface {
+    Read(p []byte) (n int, err error)
+}
+
+// Writer: anything you can write to
+type Writer interface {
+    Write(p []byte) (n int, err error)
+}
+```
+
+Many types implement these: files, network connections, buffers, etc.
+
+### Common Operations
+
+```go
+import "io"
+
+// Copy all data from reader to writer
+n, err := io.Copy(dst, src)
+
+// Read all bytes
+data, err := io.ReadAll(reader)
+
+// Limit reading
+limited := io.LimitReader(reader, 1024)  // Read at most 1024 bytes
+
+// Multi-reader: concatenate readers
+combined := io.MultiReader(reader1, reader2)
+
+// Multi-writer: write to multiple destinations
+multi := io.MultiWriter(file, os.Stdout)
+```
+
+### Pipe
+
+```go
+reader, writer := io.Pipe()
+
+go func() {
+    defer writer.Close()
+    writer.Write([]byte("Hello, Pipe!"))
+}()
+
+data, _ := io.ReadAll(reader)
+fmt.Println(string(data))  // Hello, Pipe!
+```
+
+---
+
+## sync Package
+
+Synchronization primitives.
+
+### WaitGroup
+
+```go
+import "sync"
+
+var wg sync.WaitGroup
+
+for i := 0; i < 5; i++ {
+    wg.Add(1)
+    go func(n int) {
+        defer wg.Done()
+        fmt.Println("Worker", n)
+    }(i)
+}
+
+wg.Wait()
+fmt.Println("All done")
+```
+
+### Mutex
+
+```go
+var mu sync.Mutex
+var counter int
+
+mu.Lock()
+counter++
+mu.Unlock()
+```
+
+### RWMutex
+
+```go
+var rw sync.RWMutex
+var data map[string]int
+
+// Read lock (multiple readers allowed)
+rw.RLock()
+value := data["key"]
+rw.RUnlock()
+
+// Write lock (exclusive)
+rw.Lock()
+data["key"] = value
+rw.Unlock()
+```
+
+### Once
+
+```go
+var once sync.Once
+var instance *Config
+
+func GetConfig() *Config {
+    once.Do(func() {
+        instance = loadConfig()
+    })
+    return instance
+}
+```
+
+### Pool
+
+```go
+var bufferPool = sync.Pool{
+    New: func() interface{} {
+        return new(bytes.Buffer)
+    },
+}
+
+// Get from pool
+buf := bufferPool.Get().(*bytes.Buffer)
+buf.Reset()
+
+// Use buffer...
+
+// Return to pool
+bufferPool.Put(buf)
+```
+
+---
+
+## Quick Reference Table
+
+| Package | Purpose | Key Functions |
+|---------|---------|---------------|
+| `time` | Time operations | `Now`, `Sleep`, `Parse`, `Format` |
+| `rand` | Random numbers | `Intn`, `Float64`, `Shuffle` |
+| `strconv` | String conversion | `Atoi`, `Itoa`, `Parse*`, `Format*` |
+| `strings` | String manipulation | `Split`, `Join`, `Contains`, `Replace` |
+| `os` | OS operations | `Open`, `Create`, `Getenv`, `Args` |
+| `io` | I/O interfaces | `Copy`, `ReadAll`, `Reader`, `Writer` |
+| `sync` | Synchronization | `WaitGroup`, `Mutex`, `Once` |
