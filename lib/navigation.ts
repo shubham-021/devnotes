@@ -17,7 +17,11 @@ export const navigation: NavSection[] = [
             { title: "Messages & Commands", slug: "bubbletea/messages-and-commands" },
             { title: "The Update Loop", slug: "bubbletea/the-update-loop" },
             { title: "The View", slug: "bubbletea/the-view" },
-            { title: "Example App", slug: "bubbletea/example-app" },
+            { title: "Basic Example", slug: "bubbletea/example-basic" },
+            { title: "Styled Example", slug: "bubbletea/example-styled" },
+            { title: "Persistent Storage", slug: "bubbletea/example-persistent" },
+            { title: "Enhanced Styling", slug: "bubbletea/example-enhanced" },
+            { title: "Viewport Example", slug: "bubbletea/example-viewport" },
         ],
     },
     {

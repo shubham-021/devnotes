@@ -1,0 +1,158 @@
+---
+title: Basic Example App
+description: A complete Bubble Tea todo application with detailed breakdown
+---
+
+## The Complete Program
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+
+    tea "github.com/charmbracelet/bubbletea"
+)
+
+type model struct {
+    choices  []string
+    cursor   int
+    selected map[int]struct{}
+}
+
+func initialModel() model {
+    return model{
+        choices:  []string{"Buy groceries", "Walk the dog", "Learn Bubble Tea"},
+        selected: make(map[int]struct{}),
+    }
+}
+
+func (m model) Init() tea.Cmd {
+    return nil
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch msg := msg.(type) {
+    case tea.KeyMsg:
+        switch msg.String() {
+        case "ctrl+c", "q":
+            return m, tea.Quit
+        case "up", "k":
+            if m.cursor > 0 {
+                m.cursor--
+            }
+        case "down", "j":
+            if m.cursor < len(m.choices)-1 {
+                m.cursor++
+            }
+        case "enter", " ":
+            if _, ok := m.selected[m.cursor]; ok {
+                delete(m.selected, m.cursor)
+            } else {
+                m.selected[m.cursor] = struct{}{}
+            }
+        }
+    }
+    return m, nil
+}
+
+func (m model) View() string {
+    s := "What would you like to do today?\n\n"
+
+    for i, choice := range m.choices {
+        cursor := " "
+        if m.cursor == i {
+            cursor = ">"
+        }
+
+        checked := " "
+        if _, ok := m.selected[i]; ok {
+            checked = "x"
+        }
+
+        s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, choice)
+    }
+
+    s += "\nPress q to quit.\n"
+    return s
+}
+
+func main() {
+    p := tea.NewProgram(initialModel())
+    if _, err := p.Run(); err != nil {
+        fmt.Printf("Error: %v", err)
+        os.Exit(1)
+    }
+}
+```
+
+## Line-by-Line Breakdown
+
+### The Model
+
+- `choices []string` holds the list of todo items as a slice
+- `cursor int` tracks which item the cursor points at (zero-indexed)
+- `selected map[int]struct{}` acts as a set to track completed items
+
+### initialModel()
+
+- Creates and returns the starting state
+- `make(map[int]struct{})` allocates the map to prevent nil panics
+- The choices slice is initialized with sample tasks
+
+### Init()
+
+- Runs once at startup before any events
+- Returns `nil` because this app has no startup side effects
+- Init requests work, it does not run logic directly
+
+### Update()
+
+- Receives messages as `tea.Msg` (an empty interface)
+- Uses a type switch to identify `tea.KeyMsg` events
+- Inner switch on `msg.String()` determines which key was pressed
+- `ctrl+c` or `q` returns `tea.Quit` to exit
+- `up`/`k` decrements cursor if not at the top
+- `down`/`j` increments cursor if not at the bottom
+- `enter`/space toggles selection using the comma-ok pattern
+- Always returns the model and a command (or `nil`)
+
+### View()
+
+- Builds the entire UI as a single string
+- Iterates through choices with `range`
+- Sets cursor marker to `>` for the current row
+- Checks the selected map to determine if item shows `x`
+- Uses `fmt.Sprintf` to format each line
+- Returns the complete string for Bubble Tea to render
+
+### main()
+
+- `tea.NewProgram(initialModel())` creates the program
+- `p.Run()` starts the event loop and blocks until quit
+- Error handling exits with code 1 on failure
+
+## Execution Flow
+
+1. `main()` calls `tea.NewProgram()` with the initial model
+2. `p.Run()` starts the Bubble Tea event loop
+3. `Init()` runs once and returns `nil`
+4. `View()` draws the first screen
+5. User presses a key
+6. `Update()` receives the key message
+7. `Update()` modifies state and returns it
+8. `View()` redraws with the new state
+9. Loop continues until `tea.Quit` is returned
+
+## Quick Reference
+
+| Concept | Code | Purpose |
+|---------|------|---------|
+| Value receiver | `(m model)` | Method gets a copy of the struct |
+| Empty interface | `tea.Msg` | Can hold any message type |
+| Type switch | `msg.(type)` | Identifies the concrete type |
+| Comma-ok pattern | `_, ok := m.selected[i]` | Checks if key exists in map |
+| Zero-byte value | `struct{}{}` | Memory-efficient set marker |
+| Command | `tea.Cmd` | Work to be done asynchronously |
+| Implicit break | Go switches | No fallthrough by default |

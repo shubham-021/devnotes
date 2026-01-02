@@ -1,0 +1,320 @@
+---
+title: Enhanced Styling Example
+description: A Bubble Tea todo application with progress stats and strikethrough styling
+---
+
+## Todo App with Enhanced Styling
+
+This example adds progress tracking, strikethrough for completed items, and visual separators.
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+type Todo struct {
+	Text      string `json:"text"`
+	Completed bool   `json:"completed"`
+}
+
+func getDataPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".todo-tui.json")
+}
+
+func loadTodos() []Todo {
+	data, err := os.ReadFile(getDataPath())
+	if err != nil {
+		return []Todo{
+			{Text: "Buy groceries", Completed: false},
+			{Text: "Walk the dog", Completed: false},
+			{Text: "Learn Bubble Tea", Completed: false},
+		}
+	}
+
+	var todos []Todo
+	if err := json.Unmarshal(data, &todos); err != nil {
+		return []Todo{}
+	}
+
+	return todos
+}
+
+func saveTodos(todos []Todo) error {
+	data, err := json.MarshalIndent(todos, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(getDataPath(), data, 0644)
+}
+
+var (
+	purple   = lipgloss.Color("99")
+	gray     = lipgloss.Color("245")
+	darkGray = lipgloss.Color("236")
+	white    = lipgloss.Color("255")
+	green    = lipgloss.Color("76")
+
+	titleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(purple).
+			MarginBottom(1)
+
+	itemStyle = lipgloss.NewStyle().
+			PaddingLeft(2)
+
+	selectedItemStyle = lipgloss.NewStyle().
+				PaddingLeft(0).
+				Foreground(purple).
+				Bold(true)
+
+	checkedStyle = lipgloss.NewStyle().
+			Foreground(green).
+			Bold(true)
+
+	uncheckedStyle = lipgloss.NewStyle().
+			Foreground(gray)
+
+	completedTextStyle = lipgloss.NewStyle().
+				Strikethrough(true).
+				Foreground(gray)
+
+	statsStyle = lipgloss.NewStyle().
+			Foreground(purple).
+			Bold(true).
+			MarginBottom(1)
+
+	helpStyle = lipgloss.NewStyle().
+			Foreground(gray).
+			MarginTop(1)
+)
+
+func countCompleted(todos []Todo) int {
+	count := 0
+	for _, t := range todos {
+		if t.Completed {
+			count++
+		}
+	}
+
+	return count
+}
+
+type model struct {
+	todos     []Todo
+	cursor    int
+	selected  map[int]struct{}
+	textInput textinput.Model
+	adding    bool
+}
+
+func initialModel() model {
+	ti := textinput.New()
+	ti.Placeholder = "What needs to be done?"
+	ti.CharLimit = 100
+	ti.Width = 40
+
+	return model{
+		todos:     loadTodos(),
+		selected:  make(map[int]struct{}),
+		textInput: ti,
+		adding:    false,
+	}
+}
+
+func (m model) Init() tea.Cmd {
+	return nil
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	if m.adding {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "enter":
+				value := m.textInput.Value()
+				if value != "" {
+					m.todos = append(m.todos, Todo{Text: value, Completed: false})
+					saveTodos(m.todos)
+				}
+				m.textInput.Reset()
+				m.adding = false
+				return m, nil
+			case "esc":
+				m.textInput.Reset()
+				m.adding = false
+				return m, nil
+			}
+		}
+		m.textInput, cmd = m.textInput.Update(msg)
+		return m, cmd
+	}
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return m, tea.Quit
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.cursor < len(m.todos)-1 {
+				m.cursor++
+			}
+		case "enter", " ":
+			if len(m.todos) > 0 {
+				m.todos[m.cursor].Completed = !m.todos[m.cursor].Completed
+				saveTodos(m.todos)
+			}
+		case "a":
+			m.adding = true
+			m.textInput.Focus()
+			return m, textinput.Blink
+		case "d":
+			if len(m.todos) > 0 {
+				m.todos = append(m.todos[:m.cursor], m.todos[m.cursor+1:]...)
+				if m.cursor >= len(m.todos) && m.cursor > 0 {
+					m.cursor--
+				}
+				saveTodos(m.todos)
+			}
+		}
+	}
+
+	return m, nil
+}
+
+func (m model) View() string {
+	s := titleStyle.Render("Todo List") + "\n\n"
+
+	if m.adding {
+		s += "New todo:\n"
+		s += m.textInput.View() + "\n\n"
+		s += helpStyle.Render("enter: save • esc: cancel")
+		return s
+	}
+
+	total := len(m.todos)
+	completed := countCompleted(m.todos)
+	if total > 0 {
+		s += statsStyle.Render(fmt.Sprintf("Progress: %d/%d completed", completed, total)) + "\n\n"
+	}
+
+	if total == 0 {
+		s += itemStyle.Render("All clear! Press 'a' to add a todo") + "\n"
+	}
+
+	for i, todo := range m.todos {
+		cursor := "  "
+		if m.cursor == i {
+			cursor = ">"
+		}
+
+		var checkbox string
+		if todo.Completed {
+			checkbox = checkedStyle.Render("[✓]")
+		} else {
+			checkbox = uncheckedStyle.Render("[ ]")
+		}
+
+		var text string
+		if todo.Completed {
+			text = completedTextStyle.Render(todo.Text)
+		} else if m.cursor == i {
+			text = selectedItemStyle.Render(todo.Text)
+		} else {
+			text = itemStyle.Render(todo.Text)
+		}
+
+		s += fmt.Sprintf("%s %s %s\n", cursor, checkbox, text)
+	}
+
+	s += helpStyle.Render("\n─────────────────────────────────────")
+	s += helpStyle.Render("\n↑/↓: navigate • space: toggle • a: add • d: delete • q: quit")
+
+	return s
+}
+
+func main() {
+	p := tea.NewProgram(initialModel())
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Error: %v", err)
+		os.Exit(1)
+	}
+}
+```
+
+---
+
+## Key Additions Explained
+
+### Strikethrough Style
+
+```go
+completedTextStyle = lipgloss.NewStyle().
+    Strikethrough(true).
+    Foreground(gray)
+```
+
+Completed items appear with strikethrough text in gray.
+
+### Progress Stats
+
+```go
+statsStyle = lipgloss.NewStyle().
+    Foreground(purple).
+    Bold(true).
+    MarginBottom(1)
+
+func countCompleted(todos []Todo) int {
+    count := 0
+    for _, t := range todos {
+        if t.Completed {
+            count++
+        }
+    }
+    return count
+}
+```
+
+Displays "Progress: X/Y completed" at the top of the list.
+
+### Conditional Text Styling
+
+```go
+var text string
+if todo.Completed {
+    text = completedTextStyle.Render(todo.Text)
+} else if m.cursor == i {
+    text = selectedItemStyle.Render(todo.Text)
+} else {
+    text = itemStyle.Render(todo.Text)
+}
+```
+
+Priority order:
+1. Completed items always show strikethrough
+2. Selected non-completed items show purple bold
+3. Other items use default style
+
+### Visual Separator
+
+```go
+s += helpStyle.Render("\n─────────────────────────────────────")
+s += helpStyle.Render("\n↑/↓: navigate • space: toggle • a: add • d: delete • q: quit")
+```
+
+A horizontal line separates the todo list from the help text.

@@ -1,0 +1,302 @@
+---
+title: Persistent Storage Example
+description: A Bubble Tea todo application with JSON file persistence
+---
+
+## Todo App with Persistent Storage
+
+This example adds JSON file persistence to save todos between sessions.
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "os"
+    "path/filepath"
+
+    "github.com/charmbracelet/bubbles/textinput"
+    tea "github.com/charmbracelet/bubbletea"
+    "github.com/charmbracelet/lipgloss"
+)
+
+type Todo struct {
+    Text      string `json:"text"`
+    Completed bool   `json:"completed"`
+}
+
+func getDataPath() string {
+    home, _ := os.UserHomeDir()
+    return filepath.Join(home, ".todo-tui.json")
+}
+
+func loadTodos() []Todo {
+    data, err := os.ReadFile(getDataPath())
+    if err != nil {
+        return []Todo{
+            {Text: "Buy groceries", Completed: false},
+            {Text: "Walk the dog", Completed: false},
+            {Text: "Learn Bubble Tea", Completed: false},
+        }
+    }
+
+    var todos []Todo
+    if err := json.Unmarshal(data, &todos); err != nil {
+        return []Todo{}
+    }
+
+    return todos
+}
+
+func saveTodos(todos []Todo) error {
+    data, err := json.MarshalIndent(todos, "", "  ")
+    if err != nil {
+        return err
+    }
+    return os.WriteFile(getDataPath(), data, 0644)
+}
+
+var (
+    purple   = lipgloss.Color("99")
+    gray     = lipgloss.Color("245")
+    darkGray = lipgloss.Color("236")
+    white    = lipgloss.Color("255")
+    green    = lipgloss.Color("76")
+
+    titleStyle = lipgloss.NewStyle().
+            Bold(true).
+            Foreground(purple).
+            MarginBottom(1)
+
+    itemStyle = lipgloss.NewStyle().
+            PaddingLeft(2)
+
+    selectedItemStyle = lipgloss.NewStyle().
+                PaddingLeft(0).
+                Foreground(purple).
+                Bold(true)
+
+    checkedStyle = lipgloss.NewStyle().
+            Foreground(green).
+            Bold(true)
+
+    uncheckedStyle = lipgloss.NewStyle().
+            Foreground(gray)
+
+    helpStyle = lipgloss.NewStyle().
+            Foreground(gray).
+            MarginTop(1)
+)
+
+type model struct {
+    todos     []Todo
+    cursor    int
+    selected  map[int]struct{}
+    textInput textinput.Model
+    adding    bool
+}
+
+func initialModel() model {
+    ti := textinput.New()
+    ti.Placeholder = "What needs to be done?"
+    ti.CharLimit = 100
+    ti.Width = 40
+
+    return model{
+        todos:     loadTodos(),
+        selected:  make(map[int]struct{}),
+        textInput: ti,
+        adding:    false,
+    }
+}
+
+func (m model) Init() tea.Cmd {
+    return nil
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    var cmd tea.Cmd
+
+    if m.adding {
+        switch msg := msg.(type) {
+        case tea.KeyMsg:
+            switch msg.String() {
+            case "enter":
+                value := m.textInput.Value()
+                if value != "" {
+                    m.todos = append(m.todos, Todo{Text: value, Completed: false})
+                    saveTodos(m.todos)
+                }
+                m.textInput.Reset()
+                m.adding = false
+                return m, nil
+            case "esc":
+                m.textInput.Reset()
+                m.adding = false
+                return m, nil
+            }
+        }
+        m.textInput, cmd = m.textInput.Update(msg)
+        return m, cmd
+    }
+
+    switch msg := msg.(type) {
+    case tea.KeyMsg:
+        switch msg.String() {
+        case "ctrl+c", "q":
+            return m, tea.Quit
+        case "up", "k":
+            if m.cursor > 0 {
+                m.cursor--
+            }
+        case "down", "j":
+            if m.cursor < len(m.todos)-1 {
+                m.cursor++
+            }
+        case "enter", " ":
+            if len(m.todos) > 0 {
+                m.todos[m.cursor].Completed = !m.todos[m.cursor].Completed
+                saveTodos(m.todos)
+            }
+        case "a":
+            m.adding = true
+            m.textInput.Focus()
+            return m, textinput.Blink
+        case "d":
+            if len(m.todos) > 0 {
+                m.todos = append(m.todos[:m.cursor], m.todos[m.cursor+1:]...)
+                if m.cursor >= len(m.todos) && m.cursor > 0 {
+                    m.cursor--
+                }
+                saveTodos(m.todos)
+            }
+        }
+    }
+
+    return m, nil
+}
+
+func (m model) View() string {
+    s := titleStyle.Render("Todo List") + "\n\n"
+
+    if m.adding {
+        s += "New todo:\n"
+        s += m.textInput.View() + "\n\n"
+        s += helpStyle.Render("enter: save • esc: cancel")
+        return s
+    }
+
+    if len(m.todos) == 0 {
+        s += itemStyle.Render("No todos yet! Press 'a' to add one.") + "\n"
+    }
+
+    for i, todo := range m.todos {
+        cursor := "  "
+        if m.cursor == i {
+            cursor = ">"
+        }
+
+        var checkbox string
+        if todo.Completed {
+            checkbox = checkedStyle.Render("[✓]")
+        } else {
+            checkbox = uncheckedStyle.Render("[ ]")
+        }
+
+        var text string
+        if m.cursor == i {
+            text = selectedItemStyle.Render(todo.Text)
+        } else {
+            text = itemStyle.Render(todo.Text)
+        }
+
+        s += fmt.Sprintf("%s %s %s\n", cursor, checkbox, text)
+    }
+
+    s += helpStyle.Render("\n↑/↓: navigate • space: toggle • a: add • d: delete • q: quit")
+
+    return s
+}
+
+func main() {
+    p := tea.NewProgram(initialModel())
+    if _, err := p.Run(); err != nil {
+        fmt.Printf("Error: %v", err)
+        os.Exit(1)
+    }
+}
+```
+
+---
+
+## Key Additions Explained
+
+### Todo Struct
+
+```go
+type Todo struct {
+    Text      string `json:"text"`
+    Completed bool   `json:"completed"`
+}
+```
+
+| Field | Purpose |
+|-------|---------|
+| `Text` | The todo item text |
+| `Completed` | Whether the item is done |
+| JSON tags | Enable serialization |
+
+### File Path
+
+```go
+func getDataPath() string {
+    home, _ := os.UserHomeDir()
+    return filepath.Join(home, ".todo-tui.json")
+}
+```
+
+Stores data in the user's home directory as a hidden file.
+
+### Loading Data
+
+```go
+func loadTodos() []Todo {
+    data, err := os.ReadFile(getDataPath())
+    if err != nil {
+        return []Todo{...} // Default todos
+    }
+    var todos []Todo
+    json.Unmarshal(data, &todos)
+    return todos
+}
+```
+
+Returns default todos if the file doesn't exist yet.
+
+### Saving Data
+
+```go
+func saveTodos(todos []Todo) error {
+    data, err := json.MarshalIndent(todos, "", "  ")
+    if err != nil {
+        return err
+    }
+    return os.WriteFile(getDataPath(), data, 0644)
+}
+```
+
+| Function | Purpose |
+|----------|---------|
+| `json.MarshalIndent` | Pretty-prints JSON |
+| `os.WriteFile` | Writes with 0644 permissions |
+
+### Auto-Save Pattern
+
+The app saves automatically on every state change:
+
+```go
+case "enter", " ":
+    m.todos[m.cursor].Completed = !m.todos[m.cursor].Completed
+    saveTodos(m.todos)
+```
