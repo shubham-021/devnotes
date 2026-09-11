@@ -1,0 +1,692 @@
+---
+title: "Express Request Object"
+description: Complete reference for every property and method on the Express req object
+---
+
+## What is the Request Object?
+
+Every time a client sends an HTTP request to your Express server, Express creates two objects and passes them to your route handler (and to every middleware in the chain):
+
+- **`req`** (the request object) represents the incoming HTTP request.
+- **`res`** (the response object) represents the HTTP response you will send back.
+
+The `req` object is where you find everything about what the client asked for: the URL they visited, the HTTP method they used, any data they sent, their headers, cookies, IP address, and more.
+
+```javascript
+app.get('/users/:id', (req, res) => {
+  // req contains everything about this incoming request
+});
+```
+
+This document covers every property and method available on `req`.
+
+---
+
+## Properties
+
+### `req.app`
+
+A reference to the Express application instance that owns this request. This is the same `app` object you created with `express()`.
+
+```javascript
+const app = express();
+
+app.set('appName', 'My API');
+
+app.get('/', (req, res) => {
+  console.log(req.app.get('appName')); // 'My API'
+  res.send('OK');
+});
+```
+
+This is useful inside middleware or route handlers that are defined in separate files and do not have direct access to the `app` variable. Since `req.app` always points to the application, you can use it to access application-level settings, registered template engines, or other middleware state.
+
+```javascript
+// routes/users.js
+export function getUser(req, res) {
+  const db = req.app.get('database'); // Access app-level setting
+  // ...
+}
+```
+
+---
+
+### `req.baseUrl`
+
+The URL path on which a router instance was mounted. If you mount a router under a prefix, `req.baseUrl` tells you what that prefix is.
+
+```javascript
+const usersRouter = express.Router();
+
+usersRouter.get('/:id', (req, res) => {
+  console.log(req.baseUrl); // '/api/users'
+  res.send('OK');
+});
+
+app.use('/api/users', usersRouter);
+```
+
+When the client requests `GET /api/users/42`, the route handler inside `usersRouter` sees:
+
+| Property | Value |
+|----------|-------|
+| `req.baseUrl` | `'/api/users'` |
+| `req.path` | `'/42'` |
+| `req.originalUrl` | `'/api/users/42'` |
+
+If the middleware is mounted directly on the app (not on a sub-router), `req.baseUrl` is an empty string `''`.
+
+---
+
+### `req.body`
+
+Contains the parsed body of the request. This property is `undefined` by default. It is populated by body-parsing middleware such as `express.json()` or `express.urlencoded()`.
+
+```javascript
+app.use(express.json());
+
+app.post('/users', (req, res) => {
+  console.log(req.body); // { name: 'Shubham', age: 23 }
+  res.send('OK');
+});
+```
+
+Without a body parser, `req.body` is `undefined` regardless of what the client sends. This is one of the most common mistakes beginners make: writing a POST handler and finding that `req.body` is `undefined`.
+
+The shape of `req.body` depends on which parser processed the request:
+
+| Parser | `req.body` type |
+|--------|-----------------|
+| `express.json()` | Object or array |
+| `express.urlencoded()` | Object |
+| `express.text()` | String |
+| `express.raw()` | Buffer |
+
+---
+
+### `req.cookies`
+
+An object containing cookies sent by the client. This property is `undefined` by default. It is populated by the `cookie-parser` middleware.
+
+```javascript
+import cookieParser from 'cookie-parser';
+
+app.use(cookieParser());
+
+app.get('/dashboard', (req, res) => {
+  console.log(req.cookies);
+  // { sessionId: 'abc123', theme: 'dark' }
+  res.send('OK');
+});
+```
+
+Cookies are small pieces of data that the server sends to the browser, and the browser sends them back with every subsequent request. They are commonly used for session management, user preferences, and tracking.
+
+If no `cookie-parser` middleware is installed, `req.cookies` defaults to `{}`.
+
+---
+
+### `req.fresh`
+
+A boolean that indicates whether the response is still "fresh" from the client's perspective. A response is considered fresh if the client's cached version is still valid according to cache-control mechanisms like `ETag` and `Last-Modified`.
+
+```javascript
+app.get('/data', (req, res) => {
+  if (req.fresh) {
+    // Client's cache is still valid
+    // Express will automatically send a 304 Not Modified
+  }
+  res.json({ data: 'some data' });
+});
+```
+
+Express determines freshness by comparing the request's `If-None-Match` header against the response's `ETag`, and the request's `If-Modified-Since` header against the response's `Last-Modified`. If both match, the client already has the latest version, and the server can respond with `304 Not Modified` instead of re-sending the entire payload.
+
+`req.fresh` is the opposite of `req.stale`.
+
+---
+
+### `req.host`
+
+**Deprecated.** Use `req.hostname` instead. In older versions of Express, `req.host` included the port number. This behavior was inconsistent with how the `Host` header is typically used.
+
+---
+
+### `req.hostname`
+
+The hostname derived from the `Host` HTTP header. This is the domain name without the port.
+
+```javascript
+app.get('/', (req, res) => {
+  console.log(req.hostname); // 'example.com'
+  res.send('OK');
+});
+```
+
+If the client sends `Host: example.com:3000`, `req.hostname` returns `'example.com'` (port stripped).
+
+When the `trust proxy` setting is enabled, Express reads the hostname from the `X-Forwarded-Host` header instead. This is necessary when your application runs behind a reverse proxy (like Nginx or a cloud load balancer), because the `Host` header in that case reflects the proxy's hostname, not the original hostname the client typed into their browser.
+
+```javascript
+app.set('trust proxy', true);
+
+app.get('/', (req, res) => {
+  // Now reads from X-Forwarded-Host if present
+  console.log(req.hostname);
+  res.send('OK');
+});
+```
+
+---
+
+### `req.ip`
+
+The remote IP address of the request. In a simple setup (your server directly facing the internet), this is the client's IP address.
+
+```javascript
+app.get('/', (req, res) => {
+  console.log(req.ip); // '192.168.1.42'
+  res.send('OK');
+});
+```
+
+In production, your application almost always sits behind a reverse proxy or load balancer (Nginx, AWS ALB, Cloudflare). In that case, the direct connection to your server comes from the proxy, not from the client. Without configuration, `req.ip` would return the proxy's IP address, which is useless.
+
+To get the actual client IP, you set the `trust proxy` setting:
+
+```javascript
+app.set('trust proxy', true);
+```
+
+With `trust proxy` enabled, Express reads the client's real IP from the `X-Forwarded-For` header, which proxies are expected to populate.
+
+---
+
+### `req.ips`
+
+When `trust proxy` is enabled, `req.ips` contains an array of IP addresses from the `X-Forwarded-For` header. Each proxy in the chain appends its own IP. The client's original IP is the first element.
+
+```javascript
+app.set('trust proxy', true);
+
+app.get('/', (req, res) => {
+  console.log(req.ips);
+  // ['203.0.113.50', '198.51.100.178', '192.0.2.1']
+  //  ^ client        ^ first proxy     ^ second proxy
+  res.send('OK');
+});
+```
+
+When `trust proxy` is disabled, `req.ips` is an empty array.
+
+---
+
+### `req.method`
+
+The HTTP method of the request as an uppercase string: `'GET'`, `'POST'`, `'PUT'`, `'PATCH'`, `'DELETE'`, `'OPTIONS'`, `'HEAD'`, and so on.
+
+```javascript
+app.all('/api/*', (req, res, next) => {
+  console.log(req.method); // 'GET', 'POST', etc.
+  next();
+});
+```
+
+---
+
+### `req.originalUrl`
+
+The full original URL of the request, including the path and query string, as sent by the client. Unlike `req.url` (which can be rewritten by middleware), `req.originalUrl` is immutable and always reflects what the client actually requested.
+
+```javascript
+app.get('/users', (req, res) => {
+  // Client requested: GET /users?page=2&sort=name
+  console.log(req.originalUrl); // '/users?page=2&sort=name'
+  res.send('OK');
+});
+```
+
+This is particularly important when using routers, because `req.url` gets rewritten relative to the router's mount point:
+
+```javascript
+const router = express.Router();
+
+router.get('/profile', (req, res) => {
+  // Client requested: GET /api/users/profile?tab=settings
+  console.log(req.originalUrl); // '/api/users/profile?tab=settings'
+  console.log(req.url);         // '/profile?tab=settings'
+  console.log(req.baseUrl);     // '/api/users'
+  res.send('OK');
+});
+
+app.use('/api/users', router);
+```
+
+---
+
+### `req.params`
+
+An object containing the values of named route parameters. Route parameters are segments of the URL path prefixed with a colon in the route definition.
+
+```javascript
+app.get('/users/:userId/posts/:postId', (req, res) => {
+  console.log(req.params);
+  // { userId: '42', postId: '7' }
+  res.send('OK');
+});
+```
+
+When the client requests `GET /users/42/posts/7`, Express matches the `:userId` segment to `'42'` and the `:postId` segment to `'7'`. All values are strings.
+
+If the route has no parameters, `req.params` is an empty object `{}`.
+
+---
+
+### `req.protocol`
+
+The protocol of the request: either `'http'` or `'https'`.
+
+```javascript
+app.get('/', (req, res) => {
+  console.log(req.protocol); // 'http' or 'https'
+  res.send('OK');
+});
+```
+
+When `trust proxy` is enabled, Express reads the protocol from the `X-Forwarded-Proto` header. This is critical in production because your application typically terminates TLS at the load balancer or reverse proxy. The connection between the proxy and your app is plain HTTP, but the connection between the client and the proxy was HTTPS. Without `trust proxy`, `req.protocol` would incorrectly report `'http'`.
+
+---
+
+### `req.query`
+
+An object containing the parsed query string parameters from the URL. The query string is everything after the `?` in a URL.
+
+```javascript
+app.get('/search', (req, res) => {
+  // Client requested: GET /search?q=express&page=2&limit=10
+  console.log(req.query);
+  // { q: 'express', page: '2', limit: '10' }
+  res.send('OK');
+});
+```
+
+All values are strings. If you need numbers or booleans, you must convert them yourself:
+
+```javascript
+const page = parseInt(req.query.page) || 1;
+const limit = parseInt(req.query.limit) || 20;
+```
+
+If a query parameter appears multiple times, it becomes an array:
+
+```javascript
+// GET /filter?color=red&color=blue
+console.log(req.query.color); // ['red', 'blue']
+```
+
+If no query string is present, `req.query` is an empty object `{}`.
+
+---
+
+### `req.res`
+
+A reference to the response object (`res`) associated with this request. This exists for cases where you only have access to the `req` object (for example, in a library or utility function that does not receive `res` as a parameter).
+
+```javascript
+function logAndRespond(req, message) {
+  console.log(message);
+  req.res.send(message); // Access res through req
+}
+```
+
+In practice, you rarely need this because route handlers and middleware always receive both `req` and `res` as arguments.
+
+---
+
+### `req.route`
+
+The currently matched route object. Contains information about the route pattern, HTTP method, and the stack of handlers attached to it.
+
+```javascript
+app.get('/users/:id', (req, res) => {
+  console.log(req.route);
+  // {
+  //   path: '/users/:id',
+  //   stack: [...],
+  //   methods: { get: true }
+  // }
+  res.send('OK');
+});
+```
+
+This is primarily useful for debugging and logging, when you need to know which route pattern matched the current request.
+
+---
+
+### `req.secure`
+
+A boolean shorthand for checking whether the request was made over HTTPS. It is equivalent to `req.protocol === 'https'`.
+
+```javascript
+app.get('/', (req, res) => {
+  if (!req.secure) {
+    return res.redirect('https://' + req.hostname + req.originalUrl);
+  }
+  res.send('Secure connection');
+});
+```
+
+---
+
+### `req.signedCookies`
+
+When using `cookie-parser` with a secret, this object contains cookies that were signed and whose signatures were verified. Signed cookies are cookies that the server can verify have not been tampered with by the client.
+
+```javascript
+import cookieParser from 'cookie-parser';
+
+app.use(cookieParser('my-secret-key'));
+
+app.get('/dashboard', (req, res) => {
+  console.log(req.signedCookies);
+  // { userId: '42' }
+  res.send('OK');
+});
+```
+
+If a signed cookie's signature does not match (meaning someone tampered with the value), it will not appear in `req.signedCookies`. It will be set to `false` instead.
+
+Unsigned cookies remain in `req.cookies`. Signed cookies only appear in `req.signedCookies`.
+
+---
+
+### `req.stale`
+
+The opposite of `req.fresh`. When `true`, the client's cached version is outdated and the server should send a fresh response. When `false`, the cache is still valid.
+
+```javascript
+app.get('/data', (req, res) => {
+  console.log(req.stale); // true if cache is outdated
+  res.json({ data: 'fresh data' });
+});
+```
+
+---
+
+### `req.subdomains`
+
+An array of subdomains in the hostname. Subdomains are read from right to left, and the array is ordered from most specific to least specific.
+
+```javascript
+// Request to: api.staging.example.com
+app.get('/', (req, res) => {
+  console.log(req.subdomains); // ['staging', 'api']
+  res.send('OK');
+});
+```
+
+The `subdomain offset` application setting controls how many segments from the right are considered part of the domain (not subdomains). The default offset is `2`, meaning Express treats the last two segments (`example.com`) as the domain and everything before them as subdomains.
+
+```javascript
+// Default: subdomain offset = 2
+// Host: api.staging.example.com
+// Domain: example.com (last 2 segments)
+// Subdomains: ['staging', 'api']
+
+app.set('subdomain offset', 3);
+// Now: Domain: staging.example.com (last 3 segments)
+// Subdomains: ['api']
+```
+
+---
+
+### `req.xhr`
+
+A boolean that is `true` when the request's `X-Requested-With` header is set to `'XMLHttpRequest'`. This header is automatically set by most JavaScript HTTP libraries (like jQuery's `$.ajax()`) but not by the native `fetch` API.
+
+```javascript
+app.get('/data', (req, res) => {
+  if (req.xhr) {
+    res.json({ data: 'JSON for AJAX request' });
+  } else {
+    res.render('data-page');
+  }
+});
+```
+
+In modern applications, `req.xhr` is less reliable because the `fetch` API (which is now the standard) does not set this header by default. If you need to distinguish between browser page navigation and API calls, using content negotiation (`req.accepts()`) or a separate API path prefix (`/api/...`) is more dependable.
+
+---
+
+## Methods
+
+### `req.accepts(types)`
+
+Checks the request's `Accept` header and returns the best match from the provided content types. If none of the specified types are accepted, returns `false`.
+
+The `Accept` header is sent by the client to tell the server what response formats it can handle. For example, a browser typically sends:
+
+```
+Accept: text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8
+```
+
+This says: "I prefer HTML, then XHTML, then XML, and I will accept anything else as a last resort."
+
+```javascript
+app.get('/data', (req, res) => {
+  const accepted = req.accepts(['html', 'json', 'text']);
+
+  if (accepted === 'json') {
+    res.json({ message: 'Hello' });
+  } else if (accepted === 'html') {
+    res.send('<h1>Hello</h1>');
+  } else if (accepted === 'text') {
+    res.send('Hello');
+  } else {
+    res.status(406).send('Not Acceptable');
+  }
+});
+```
+
+You can also call it with a single type:
+
+```javascript
+if (req.accepts('json')) {
+  // Client accepts JSON
+}
+```
+
+This method is the foundation of **content negotiation**, which is a pattern where a single endpoint can return different response formats depending on what the client asked for.
+
+---
+
+### `req.acceptsCharsets(charsets)`
+
+Checks the `Accept-Charset` header and returns the best matching character set from the provided list. Returns `false` if none match.
+
+```javascript
+const charset = req.acceptsCharsets(['utf-8', 'iso-8859-1']);
+// Returns the best match or false
+```
+
+In practice, this is rarely used because virtually all modern systems use UTF-8.
+
+---
+
+### `req.acceptsEncodings(encodings)`
+
+Checks the `Accept-Encoding` header and returns the best matching content encoding. This header tells the server which compression algorithms the client supports.
+
+```javascript
+const encoding = req.acceptsEncodings(['gzip', 'deflate', 'br']);
+// Returns 'gzip', 'deflate', 'br', 'identity', or false
+```
+
+A typical browser sends:
+
+```
+Accept-Encoding: gzip, deflate, br
+```
+
+This tells the server: "I can handle gzip, deflate, and Brotli compressed responses." The server can then compress the response body to save bandwidth.
+
+In practice, you rarely call this method directly because compression middleware (like the `compression` npm package) handles this automatically.
+
+---
+
+### `req.acceptsLanguages(languages)`
+
+Checks the `Accept-Language` header and returns the best matching language from the provided list. This header tells the server which languages the client prefers.
+
+```javascript
+const lang = req.acceptsLanguages(['en', 'fr', 'de', 'es']);
+// Returns 'en', 'fr', etc., or false
+```
+
+A typical browser sends something like:
+
+```
+Accept-Language: en-US,en;q=0.9,hi;q=0.8
+```
+
+This says: "I prefer American English, then any English, then Hindi."
+
+This is useful for internationalization (i18n), where your application serves content in multiple languages and needs to decide which one to use for each request.
+
+---
+
+### `req.get(headerName)`
+
+Returns the value of the specified HTTP request header. The header name is **case-insensitive**.
+
+```javascript
+app.get('/', (req, res) => {
+  const contentType = req.get('Content-Type');
+  const auth = req.get('Authorization');
+  const userAgent = req.get('User-Agent');
+
+  res.json({ contentType, auth, userAgent });
+});
+```
+
+This is an alias for `req.header(headerName)`. Both do the same thing.
+
+`req.get()` is the cleaner, more readable alternative to accessing `req.headers` directly. With `req.headers`, you must use lowercase header names (`req.headers['content-type']`). With `req.get()`, case does not matter.
+
+---
+
+### `req.is(type)`
+
+Checks if the incoming request's `Content-Type` header matches the given MIME type. Returns the matching type if it matches, or `false` if it does not.
+
+```javascript
+app.post('/upload', (req, res) => {
+  if (req.is('application/json')) {
+    // Handle JSON body
+  } else if (req.is('multipart/form-data')) {
+    // Handle file upload
+  } else if (req.is('text/*')) {
+    // Handle any text format (text/plain, text/csv, text/html, etc.)
+  }
+
+  res.send('OK');
+});
+```
+
+You can use wildcards: `req.is('text/*')` matches `text/plain`, `text/html`, `text/csv`, and any other `text/` subtype.
+
+If the request has no body (no `Content-Type` header), `req.is()` returns `null`.
+
+This method is useful when a single endpoint needs to handle different input formats. For example, an import endpoint might accept both JSON and CSV uploads.
+
+---
+
+### `req.range(size, options)`
+
+Parses the `Range` header from the request. The `Range` header is used by clients to request only a portion of a resource, which is common for:
+
+- Resumable file downloads (download bytes 1000-2000 of a file).
+- Video/audio streaming (the player requests chunks of the media file as needed).
+- Pagination over large binary data.
+
+```javascript
+app.get('/video', (req, res) => {
+  const fileSize = 1000000; // 1MB file
+  const ranges = req.range(fileSize);
+
+  if (ranges === -1) {
+    // Malformed Range header
+    res.status(416).send('Range Not Satisfiable');
+    return;
+  }
+
+  if (ranges === -2) {
+    // Unsatisfiable range (requested range beyond file size)
+    res.status(416).send('Range Not Satisfiable');
+    return;
+  }
+
+  if (!ranges) {
+    // No Range header present, send entire file
+    res.sendFile('/path/to/video.mp4');
+    return;
+  }
+
+  // ranges is an array of { start, end } objects
+  const range = ranges[0];
+  console.log(range.start, range.end); // e.g., 0, 999999
+  // Send the requested portion of the file
+});
+```
+
+The `size` parameter is the total size of the resource in bytes. Express needs this to validate that the requested range is within bounds.
+
+The return value is:
+
+| Return Value | Meaning |
+|-------------|---------|
+| `-1` | Unsatisfiable range |
+| `-2` | Malformed header |
+| Array of `{ start, end }` | Parsed ranges |
+| `undefined` | No `Range` header present |
+
+---
+
+## Quick Reference
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `req.app` | Express instance | Reference to the application |
+| `req.baseUrl` | String | Mount path of the router |
+| `req.body` | Any | Parsed request body (requires middleware) |
+| `req.cookies` | Object | Parsed cookies (requires `cookie-parser`) |
+| `req.fresh` | Boolean | Whether the client cache is fresh |
+| `req.hostname` | String | Hostname from `Host` header |
+| `req.ip` | String | Remote IP address |
+| `req.ips` | Array | IP chain from `X-Forwarded-For` |
+| `req.method` | String | HTTP method (`GET`, `POST`, etc.) |
+| `req.originalUrl` | String | Original full URL as requested |
+| `req.params` | Object | Named route parameters |
+| `req.protocol` | String | `'http'` or `'https'` |
+| `req.query` | Object | Parsed query string |
+| `req.res` | Response | Associated response object |
+| `req.route` | Object | Current matched route |
+| `req.secure` | Boolean | Whether the request is HTTPS |
+| `req.signedCookies` | Object | Verified signed cookies |
+| `req.stale` | Boolean | Whether the client cache is stale |
+| `req.subdomains` | Array | Array of subdomains |
+| `req.xhr` | Boolean | Whether `X-Requested-With` is `XMLHttpRequest` |
+
+### Methods
+
+| Method | Returns | Purpose |
+|--------|---------|---------|
+| `req.accepts(types)` | String or false | Content negotiation |
+| `req.acceptsCharsets(charsets)` | String or false | Character set negotiation |
+| `req.acceptsEncodings(encodings)` | String or false | Compression negotiation |
+| `req.acceptsLanguages(langs)` | String or false | Language negotiation |
+| `req.get(header)` | String | Read a request header |
+| `req.is(type)` | String, false, or null | Check request content type |
+| `req.range(size)` | Array, number, or undefined | Parse `Range` header |

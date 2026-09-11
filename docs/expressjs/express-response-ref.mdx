@@ -1,0 +1,714 @@
+---
+title: "Express Response Object"
+description: Complete reference for every property and method on the Express res object
+---
+
+## What is the Response Object?
+
+When a request comes into your Express server, Express creates a response object (`res`) alongside the request object (`req`). While `req` carries information about what the client asked for, `res` is your toolkit for constructing and sending the answer back.
+
+You do not create `res` yourself. Express creates it and passes it to every middleware and route handler as the second argument:
+
+```javascript
+app.get('/users', (req, res) => {
+  // req = what the client sent
+  // res = what you send back
+  res.send('Hello');
+});
+```
+
+Every response has three fundamental components: a **status code** (was it successful? was there an error?), **headers** (metadata about the response), and a **body** (the actual data). The methods on `res` give you control over all three.
+
+---
+
+## Properties
+
+### `res.app`
+
+A reference to the Express application instance, identical to `req.app`. Useful when you need to access application-level settings from within a response-related function.
+
+```javascript
+app.set('appName', 'My API');
+
+app.get('/', (req, res) => {
+  const name = res.app.get('appName'); // 'My API'
+  res.send(name);
+});
+```
+
+---
+
+### `res.headersSent`
+
+A boolean that indicates whether the response headers have already been sent to the client. Once headers are sent, you cannot modify them or send a different status code.
+
+```javascript
+app.get('/', (req, res) => {
+  console.log(res.headersSent); // false
+
+  res.send('Hello');
+
+  console.log(res.headersSent); // true
+});
+```
+
+This is critical for error handling. A common mistake is trying to send a response twice:
+
+```javascript
+app.get('/data', async (req, res) => {
+  try {
+    const data = await fetchData();
+    res.json(data);
+  } catch (err) {
+    // If fetchData() succeeded but something else failed after res.json(),
+    // headers are already sent. Check before trying to send an error.
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Something went wrong' });
+    }
+  }
+});
+```
+
+Without this check, Express throws an `ERR_HTTP_HEADERS_SENT` error that crashes your process if unhandled.
+
+---
+
+### `res.locals`
+
+An object that is scoped to the current request-response cycle. Any data you attach to `res.locals` is available to every middleware and route handler that runs during this single request, but it is not shared across different requests.
+
+```javascript
+// Authentication middleware
+app.use((req, res, next) => {
+  const token = req.get('Authorization');
+  if (token) {
+    res.locals.user = verifyToken(token);
+    res.locals.isAuthenticated = true;
+  } else {
+    res.locals.isAuthenticated = false;
+  }
+  next();
+});
+
+// Route handler
+app.get('/dashboard', (req, res) => {
+  if (!res.locals.isAuthenticated) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  res.json({ user: res.locals.user });
+});
+```
+
+In server-side rendering, `res.locals` is especially useful because template engines (like EJS, Pug, or Handlebars) have access to `res.locals` automatically. Any data you put there is available in your templates without explicitly passing it:
+
+```javascript
+app.use((req, res, next) => {
+  res.locals.siteName = 'My Website';
+  res.locals.currentYear = new Date().getFullYear();
+  next();
+});
+
+// In your EJS template, you can directly use:
+// <title><%= siteName %></title>
+// <footer>&copy; <%= currentYear %></footer>
+```
+
+---
+
+### `res.req`
+
+**Note:** In the Express API, this is listed as a property, not a method. It is a reference to the request object (`req`) associated with this response. This is the counterpart to `req.res`.
+
+```javascript
+app.get('/', (req, res) => {
+  console.log(res.req === req); // true
+});
+```
+
+---
+
+## Methods
+
+### `res.append(header, value)`
+
+Appends a value to an HTTP response header. If the header does not exist yet, it creates it. If it already exists, the new value is added to it (headers can have multiple values).
+
+```javascript
+app.get('/', (req, res) => {
+  res.append('Link', '<https://example.com>; rel="alternate"');
+  res.append('Link', '<https://example.com/rss>; rel="alternate"');
+  res.append('Set-Cookie', 'theme=dark; Path=/');
+  res.send('OK');
+});
+```
+
+The difference between `res.append()` and `res.set()` is important: `res.set()` **replaces** the header value entirely, while `res.append()` **adds** to it. Use `res.append()` when a header can legitimately have multiple values, like `Set-Cookie` or `Link`.
+
+---
+
+### `res.attachment(filename)`
+
+Sets the `Content-Disposition` header to `attachment`, which tells the browser to download the response as a file rather than displaying it inline. Optionally, you can specify a filename that the browser uses as the default save name.
+
+```javascript
+app.get('/report', (req, res) => {
+  res.attachment('sales-report.pdf');
+  // Sets: Content-Disposition: attachment; filename="sales-report.pdf"
+  // Also sets Content-Type based on the filename extension
+
+  // You still need to send the file content yourself
+  res.send(pdfBuffer);
+});
+```
+
+This method only sets headers. It does not send the file. If you want to send a file and trigger a download in one step, use `res.download()` instead.
+
+---
+
+### `res.clearCookie(name, options)`
+
+Clears a cookie from the client's browser by setting it with an expiration date in the past.
+
+```javascript
+app.post('/logout', (req, res) => {
+  res.clearCookie('sessionId');
+  res.clearCookie('rememberMe', { path: '/account' });
+  res.send('Logged out');
+});
+```
+
+The `options` object (like `path`, `domain`, `secure`, `httpOnly`) must match the options that were used when the cookie was originally set. If you set a cookie with `path: '/account'`, you must clear it with the same `path: '/account'`. Otherwise, the browser treats them as different cookies and the original one persists.
+
+---
+
+### `res.cookie(name, value, options)`
+
+Sets a cookie on the client's browser. The cookie is sent in the `Set-Cookie` header of the response.
+
+```javascript
+app.post('/login', (req, res) => {
+  // Simple cookie
+  res.cookie('theme', 'dark');
+
+  // Cookie with options
+  res.cookie('sessionId', 'abc123', {
+    httpOnly: true,     // Cannot be accessed by client-side JavaScript
+    secure: true,       // Only sent over HTTPS
+    sameSite: 'strict', // Not sent with cross-site requests
+    maxAge: 86400000,   // Expires in 24 hours (milliseconds)
+    path: '/'           // Available on all paths
+  });
+
+  res.send('Logged in');
+});
+```
+
+Important options:
+
+| Option | Purpose |
+|--------|---------|
+| `httpOnly` | Prevents JavaScript access (mitigates XSS attacks) |
+| `secure` | Cookie only sent over HTTPS |
+| `sameSite` | Controls cross-site sending (`'strict'`, `'lax'`, `'none'`) |
+| `maxAge` | Lifetime in milliseconds |
+| `expires` | Specific expiration date (a `Date` object) |
+| `path` | URL path the cookie is valid for |
+| `domain` | Domain the cookie is valid for |
+| `signed` | Sign the cookie (requires `cookie-parser` with a secret) |
+
+In industry, authentication cookies should always be set with `httpOnly: true` and `secure: true`. The `httpOnly` flag prevents client-side JavaScript from reading the cookie, which protects against cross-site scripting (XSS) attacks. The `secure` flag ensures the cookie is never sent over unencrypted HTTP.
+
+You can also set a cookie to a JSON-serializable object by prefixing it with `j:`:
+
+```javascript
+res.cookie('preferences', { theme: 'dark', fontSize: 14 });
+// The value is automatically JSON-serialized
+```
+
+---
+
+### `res.download(path, filename, options, callback)`
+
+Transfers a file from your server's filesystem as an attachment, prompting the browser to download it. This is a convenience method that combines `res.attachment()` and `res.sendFile()`.
+
+```javascript
+app.get('/download/report', (req, res) => {
+  res.download('/path/to/report.pdf');
+});
+```
+
+You can specify a different filename for the download dialog:
+
+```javascript
+app.get('/download/report', (req, res) => {
+  // File on disk is "report-2024-q3.pdf"
+  // User sees "quarterly-report.pdf" in their download dialog
+  res.download('/path/to/report-2024-q3.pdf', 'quarterly-report.pdf');
+});
+```
+
+With a callback for error handling:
+
+```javascript
+app.get('/download/:filename', (req, res) => {
+  const filePath = `/uploads/${req.params.filename}`;
+
+  res.download(filePath, (err) => {
+    if (err) {
+      if (!res.headersSent) {
+        res.status(404).send('File not found');
+      }
+    }
+  });
+});
+```
+
+---
+
+### `res.end(data, encoding)`
+
+Ends the response process. This method comes from Node.js's `http.ServerResponse` and signals that the response is complete and the server should send it to the client.
+
+```javascript
+app.get('/', (req, res) => {
+  res.status(204).end(); // No content, just end
+});
+```
+
+In Express, you rarely call `res.end()` directly because methods like `res.send()`, `res.json()`, and `res.sendFile()` call it internally. Use `res.end()` when you want to send a response with no body, or when you have already written the body using `res.write()`.
+
+```javascript
+app.get('/stream', (req, res) => {
+  res.write('chunk 1');
+  res.write('chunk 2');
+  res.end(); // Signal that the response is complete
+});
+```
+
+---
+
+### `res.format(object)`
+
+Performs content negotiation based on the request's `Accept` header. You provide an object mapping MIME types to handler functions, and Express calls the handler that matches what the client accepts.
+
+```javascript
+app.get('/users/:id', (req, res) => {
+  const user = { name: 'Shubham', age: 23 };
+
+  res.format({
+    'text/html': () => {
+      res.send(`<h1>${user.name}</h1><p>Age: ${user.age}</p>`);
+    },
+    'application/json': () => {
+      res.json(user);
+    },
+    'text/plain': () => {
+      res.send(`${user.name}, ${user.age}`);
+    },
+    default: () => {
+      res.status(406).send('Not Acceptable');
+    }
+  });
+});
+```
+
+When a browser requests this URL, it sends `Accept: text/html`, so Express calls the HTML handler. When an API client sends `Accept: application/json`, Express calls the JSON handler.
+
+The `default` key is called when none of the specified types match the `Accept` header.
+
+---
+
+### `res.get(headerName)`
+
+Returns the value of a response header that has been set (but not yet sent). This is for reading headers you have set on the response, not request headers.
+
+```javascript
+app.get('/', (req, res) => {
+  res.set('X-Custom', 'hello');
+  console.log(res.get('X-Custom')); // 'hello'
+  res.send('OK');
+});
+```
+
+---
+
+### `res.json(body)`
+
+Sends a JSON response. This method sets the `Content-Type` header to `application/json` and converts the provided value to a JSON string using `JSON.stringify()`.
+
+```javascript
+app.get('/users', (req, res) => {
+  res.json({ name: 'Shubham', age: 23 });
+});
+```
+
+The response sent to the client:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"name":"Shubham","age":23}
+```
+
+`res.json()` handles edge cases that `res.send()` does not. For example, it correctly converts `null` and `undefined` to their JSON representations. It also applies the `json replacer` and `json spaces` application settings:
+
+```javascript
+// Pretty-print JSON in development
+app.set('json spaces', 2);
+
+app.get('/users', (req, res) => {
+  res.json({ name: 'Shubham', age: 23 });
+  // Response body:
+  // {
+  //   "name": "Shubham",
+  //   "age": 23
+  // }
+});
+```
+
+---
+
+### `res.jsonp(body)`
+
+Sends a JSON response with JSONP (JSON with Padding) support. JSONP is a legacy technique for making cross-origin requests from browsers that did not support CORS. It works by wrapping the JSON response in a function call.
+
+```javascript
+app.get('/api/data', (req, res) => {
+  res.jsonp({ name: 'Shubham' });
+});
+```
+
+When the client requests `GET /api/data?callback=myFunction`, the response is:
+
+```javascript
+/**/ typeof myFunction === 'function' && myFunction({"name":"Shubham"});
+```
+
+In modern applications, JSONP is almost never needed because CORS (Cross-Origin Resource Sharing) has replaced it entirely. You would only encounter JSONP when maintaining legacy systems or supporting very old browsers.
+
+---
+
+### `res.links(links)`
+
+Sets the `Link` response header with the provided links. The `Link` header is used to express relationships between resources, commonly for API pagination.
+
+```javascript
+app.get('/api/users', (req, res) => {
+  res.links({
+    next: 'http://api.example.com/users?page=3',
+    prev: 'http://api.example.com/users?page=1',
+    last: 'http://api.example.com/users?page=10'
+  });
+  res.json(users);
+});
+```
+
+This sets the header:
+
+```
+Link: <http://api.example.com/users?page=3>; rel="next",
+      <http://api.example.com/users?page=1>; rel="prev",
+      <http://api.example.com/users?page=10>; rel="last"
+```
+
+API clients can parse this header to navigate between pages of results. GitHub's REST API uses this pattern extensively for paginated endpoints.
+
+---
+
+### `res.location(path)`
+
+Sets the `Location` response header without changing the status code. The `Location` header tells the client where a resource has moved to or where a newly created resource can be found.
+
+```javascript
+app.post('/users', (req, res) => {
+  const newUser = createUser(req.body);
+  res.location(`/users/${newUser.id}`);
+  res.status(201).json(newUser);
+});
+```
+
+Unlike `res.redirect()`, this method does not set the status code to 301 or 302. It only sets the header. You control the status code separately.
+
+---
+
+### `res.redirect(status, path)`
+
+Redirects the client to a different URL. By default, it sends a `302 Found` status code.
+
+```javascript
+// Default 302 redirect
+app.get('/old-page', (req, res) => {
+  res.redirect('/new-page');
+});
+
+// Permanent 301 redirect (tells search engines the page has moved permanently)
+app.get('/legacy', (req, res) => {
+  res.redirect(301, '/modern');
+});
+
+// Redirect to an external URL
+app.get('/github', (req, res) => {
+  res.redirect('https://github.com');
+});
+
+// Redirect back to the referring page
+app.post('/login', (req, res) => {
+  // If login fails
+  res.redirect('back'); // Uses the Referer header
+});
+```
+
+Common status codes for redirects:
+
+| Code | Meaning | Use Case |
+|------|---------|----------|
+| `301` | Moved Permanently | URL has permanently changed |
+| `302` | Found (temporary redirect) | Default, most common |
+| `303` | See Other | Redirect after a POST (PRG pattern) |
+| `307` | Temporary Redirect | Like 302 but preserves the HTTP method |
+| `308` | Permanent Redirect | Like 301 but preserves the HTTP method |
+
+The **Post-Redirect-Get (PRG)** pattern is a common design pattern in web development. After processing a form submission (POST), instead of rendering the result directly, you redirect the user to a GET page. This prevents the "resubmit form?" dialog when the user refreshes the page.
+
+```javascript
+app.post('/submit-order', (req, res) => {
+  processOrder(req.body);
+  res.redirect(303, '/order-confirmation');
+});
+```
+
+---
+
+### `res.send(body)`
+
+Sends the HTTP response. This is the most versatile response method. It automatically sets the `Content-Type` and `Content-Length` headers based on the type of the argument:
+
+```javascript
+// String: sets Content-Type to text/html
+res.send('<h1>Hello</h1>');
+
+// Buffer: sets Content-Type to application/octet-stream
+res.send(Buffer.from('binary data'));
+
+// Object or Array: sets Content-Type to application/json (calls res.json internally)
+res.send({ name: 'Shubham' });
+res.send([1, 2, 3]);
+```
+
+When you pass a string, Express sets `Content-Type: text/html`. If you want to send plain text, use `res.type('text').send('plain text')` instead.
+
+`res.send()` also generates ETags automatically for responses above a certain size, enabling caching.
+
+---
+
+### `res.sendFile(path, options, callback)`
+
+Sends a file from the filesystem as the response. Express reads the file, sets the appropriate `Content-Type` header based on the file extension, and streams it to the client.
+
+```javascript
+import path from 'path';
+
+app.get('/terms', (req, res) => {
+  res.sendFile(path.join(__dirname, 'views', 'terms.html'));
+});
+```
+
+The path must be absolute unless you specify a `root` option:
+
+```javascript
+app.get('/images/:name', (req, res) => {
+  res.sendFile(req.params.name, {
+    root: path.join(__dirname, 'public', 'images'),
+    dotfiles: 'deny'
+  }, (err) => {
+    if (err) {
+      res.status(404).send('Image not found');
+    }
+  });
+});
+```
+
+`res.sendFile()` supports range requests (for resumable downloads and video streaming), conditional requests (ETags and Last-Modified), and various caching options.
+
+---
+
+### `res.sendStatus(statusCode)`
+
+Sets the HTTP status code and sends the corresponding status text as the response body. This is a shorthand for setting the status and sending a minimal response.
+
+```javascript
+res.sendStatus(200); // Equivalent to: res.status(200).send('OK')
+res.sendStatus(201); // Equivalent to: res.status(201).send('Created')
+res.sendStatus(204); // Equivalent to: res.status(204).send('No Content')
+res.sendStatus(400); // Equivalent to: res.status(400).send('Bad Request')
+res.sendStatus(401); // Equivalent to: res.status(401).send('Unauthorized')
+res.sendStatus(403); // Equivalent to: res.status(403).send('Forbidden')
+res.sendStatus(404); // Equivalent to: res.status(404).send('Not Found')
+res.sendStatus(500); // Equivalent to: res.status(500).send('Internal Server Error')
+```
+
+This is useful for endpoints that do not need to return any data, just a status. For example, a DELETE endpoint might respond with `res.sendStatus(204)` to indicate success with no content.
+
+---
+
+### `res.set(header, value)`
+
+Sets a response header. You can set a single header or multiple headers at once.
+
+```javascript
+// Single header
+res.set('Content-Type', 'text/plain');
+res.set('X-Request-Id', 'abc-123');
+
+// Multiple headers at once
+res.set({
+  'Content-Type': 'text/plain',
+  'X-Request-Id': 'abc-123',
+  'X-Powered-By': 'Express'
+});
+```
+
+`res.set()` is an alias for `res.header()`. Both do the same thing.
+
+If you call `res.set()` on a header that already has a value, the old value is **replaced**. To add to an existing header instead, use `res.append()`.
+
+---
+
+### `res.status(code)`
+
+Sets the HTTP status code for the response. This method is chainable, meaning it returns the `res` object so you can call other methods on it.
+
+```javascript
+res.status(200).json({ message: 'Success' });
+res.status(201).json({ id: 1, name: 'Shubham' });
+res.status(400).json({ error: 'Invalid input' });
+res.status(404).json({ error: 'Not found' });
+res.status(500).json({ error: 'Internal server error' });
+```
+
+This method does not send the response. It only sets the status code. You must chain it with a method that sends the response (`.send()`, `.json()`, `.end()`, etc.).
+
+```javascript
+// This does NOT send a response:
+res.status(200); // Status is set, but nothing is sent
+
+// This sends a response:
+res.status(200).send('OK');
+```
+
+Common HTTP status codes:
+
+| Code | Name | Typical Use |
+|------|------|-------------|
+| `200` | OK | Successful GET, PUT, PATCH |
+| `201` | Created | Successful POST that creates a resource |
+| `204` | No Content | Successful DELETE with no body |
+| `301` | Moved Permanently | Permanent URL redirect |
+| `302` | Found | Temporary URL redirect |
+| `304` | Not Modified | Cache hit (client can use cached version) |
+| `400` | Bad Request | Invalid client input |
+| `401` | Unauthorized | Authentication required |
+| `403` | Forbidden | Authenticated but not authorized |
+| `404` | Not Found | Resource does not exist |
+| `409` | Conflict | Resource conflict (duplicate entry) |
+| `422` | Unprocessable Entity | Validation failure |
+| `429` | Too Many Requests | Rate limit exceeded |
+| `500` | Internal Server Error | Server-side error |
+| `503` | Service Unavailable | Server temporarily down |
+
+---
+
+### `res.type(type)`
+
+Sets the `Content-Type` header based on the specified MIME type. If the type does not contain a `/`, Express uses the `mime.lookup()` function to find the full MIME type.
+
+```javascript
+res.type('html');                  // Sets: Content-Type: text/html
+res.type('json');                  // Sets: Content-Type: application/json
+res.type('png');                   // Sets: Content-Type: image/png
+res.type('application/json');      // Sets: Content-Type: application/json
+res.type('text/plain');            // Sets: Content-Type: text/plain
+```
+
+This is useful when `res.send()` does not automatically set the correct content type for your use case. For example, if you are sending HTML as a string but want it treated as plain text:
+
+```javascript
+res.type('text').send('<p>This is not HTML, it is plain text</p>');
+```
+
+---
+
+### `res.vary(field)`
+
+Adds the specified field to the `Vary` response header. The `Vary` header tells caches (CDNs, browser caches, proxy caches) that the response varies based on certain request headers.
+
+```javascript
+app.get('/data', (req, res) => {
+  res.vary('Accept');
+  res.vary('Accept-Encoding');
+
+  if (req.accepts('json')) {
+    res.json({ data: 'value' });
+  } else {
+    res.send('data: value');
+  }
+});
+```
+
+The `Vary` header is important for caching correctness. Without it, a cache might serve a JSON response to a client that requested HTML, because it cached the response from a previous JSON request to the same URL. By setting `Vary: Accept`, the cache knows to store separate versions for different `Accept` header values.
+
+In practice, you rarely call `res.vary()` directly. Express and compression middleware set it automatically when needed.
+
+---
+
+## Quick Reference
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `res.app` | Express instance | Reference to the application |
+| `res.headersSent` | Boolean | Whether headers have been sent |
+| `res.locals` | Object | Request-scoped data store |
+| `res.req` | Request | Associated request object |
+
+### Methods for Setting Headers
+
+| Method | Purpose |
+|--------|---------|
+| `res.set(header, value)` | Set (replace) a response header |
+| `res.append(header, value)` | Add to a response header |
+| `res.get(header)` | Read a set response header |
+| `res.type(type)` | Set `Content-Type` |
+| `res.vary(field)` | Add to the `Vary` header |
+| `res.links(links)` | Set the `Link` header |
+| `res.location(path)` | Set the `Location` header |
+
+### Methods for Setting Cookies
+
+| Method | Purpose |
+|--------|---------|
+| `res.cookie(name, value, options)` | Set a cookie |
+| `res.clearCookie(name, options)` | Remove a cookie |
+
+### Methods for Sending Responses
+
+| Method | What it sends | Content-Type |
+|--------|---------------|-------------|
+| `res.send(body)` | String, Buffer, or Object | Auto-detected |
+| `res.json(body)` | JSON | `application/json` |
+| `res.jsonp(body)` | JSONP | `application/javascript` |
+| `res.sendFile(path)` | File from disk | Based on extension |
+| `res.download(path)` | File as attachment | Based on extension |
+| `res.sendStatus(code)` | Status text | `text/plain` |
+| `res.end()` | Nothing (ends response) | N/A |
+| `res.redirect(url)` | Redirect response | N/A |
+
+### Methods for Response Metadata
+
+| Method | Purpose |
+|--------|---------|
+| `res.status(code)` | Set HTTP status code (chainable) |
+| `res.format(object)` | Content negotiation |
+| `res.attachment(filename)` | Set `Content-Disposition` to attachment |

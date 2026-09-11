@@ -1,0 +1,733 @@
+---
+title: "Express API: Built-in Methods"
+description: Understanding the top-level express() methods for parsing request bodies and serving static files
+---
+
+The Express team maintains a collection of working example applications that demonstrate routing, authentication, error handling, content negotiation, middleware composition, and many other patterns covered in these notes. If you want to see how these concepts come together in complete, runnable projects, go through them here: [Express Examples](https://expressjs.com/en/5x/starter/examples/).
+
+---
+
+## What are Express Built-in Methods?
+
+When you install Express, it ships with a handful of built-in utility functions that you can use immediately, without installing anything extra. These functions live directly on the `express` object that you import at the top of your file.
+
+```javascript
+import express from 'express';
+```
+
+That `express` variable is not just a function you call to create an app. It also has several methods attached to it. Each method returns a piece of middleware that you can plug into your application with `app.use()`.
+
+Before diving into each method, it helps to understand what problem they all solve.
+
+---
+
+## The Fundamental Problem: Raw Bytes
+
+When a client (a browser, a mobile app, Postman, or another server) sends data to your server, that data does not arrive as a neat JavaScript object. It arrives as **raw bytes** over the network, wrapped in an HTTP message. The body of that message might look something like this on the wire:
+
+```
+POST /users HTTP/1.1
+Host: localhost:3000
+Content-Type: application/json
+Content-Length: 36
+
+{"name":"Shubham","age":23}
+```
+
+Your Express route handler receives a `req` object, but `req.body` is **undefined** by default. Express does not automatically read, buffer, and parse the incoming data for you. It leaves that job to middleware.
+
+That is exactly what `express.json()`, `express.urlencoded()`, `express.raw()`, and `express.text()` do. Each one knows how to read a specific kind of request body, parse it into a usable JavaScript value, and attach it to `req.body` so your route handler can use it.
+
+---
+
+## `express.json()`
+
+### What it does
+
+`express.json()` is a middleware function that reads an incoming HTTP request whose body contains JSON, parses that JSON string into a JavaScript value, and places the result into `req.body`.
+
+```javascript
+import express, { type Express, type Request, type Response } from 'express';
+
+const app: Express = express();
+
+app.use(express.json());
+
+app.post('/users', (req: Request, res: Response) => {
+  console.log(req.body); // { name: 'Shubham', age: 23 }
+  res.send('Received');
+});
+```
+
+Without `app.use(express.json())`, `req.body` in the route handler above would be `undefined`.
+
+### Why you need it
+
+HTTP does not inherently give your JavaScript code a nice object. The request body arrives as a raw string of bytes. For the example above, the raw body that Express receives over the wire looks like this:
+
+```
+"{\"name\":\"Shubham\",\"age\":23}"
+```
+
+That is a plain string, not a JavaScript object. You cannot do `req.body.name` on a string and get anything useful.
+
+`express.json()` performs the equivalent of `JSON.parse(...)` on that string and turns it into:
+
+```javascript
+{
+  name: "Shubham",
+  age: 23
+}
+```
+
+Now `req.body.name` returns `"Shubham"` and `req.body.age` returns `23`.
+
+### How it decides to parse a request
+
+`express.json()` does not blindly parse every incoming request. It inspects the request's `Content-Type` header first:
+
+```
+Content-Type: application/json
+```
+
+Only when the `Content-Type` indicates that the body is JSON does `express.json()` attempt to parse it. If a request comes in with `Content-Type: text/plain` or no `Content-Type` at all, `express.json()` ignores it and calls `next()`, passing control to the next middleware or route handler. In that case, `req.body` remains `undefined`.
+
+This is an important detail. In a real application, your server might receive different types of requests (JSON from your API clients, form data from HTML pages, file uploads). Each body-parsing middleware only handles the content type it is designed for and leaves everything else alone.
+
+### Options
+
+`express.json()` accepts an optional configuration object:
+
+```javascript
+app.use(express.json({
+  inflate: true,
+  limit: '100kb',
+  reviver: null,
+  strict: true,
+  type: 'application/json',
+  verify: undefined
+}));
+```
+
+The values shown above are the defaults. You only need to pass an options object when you want to change one of these defaults.
+
+#### `limit`
+
+Controls the maximum size of the request body that this middleware will accept. If a request body exceeds this limit, the middleware rejects it with a `413 Payload Too Large` status code.
+
+```javascript
+app.use(express.json({ limit: '1mb' }));
+```
+
+You can express the limit as:
+
+| Format | Meaning |
+|--------|---------|
+| `'100kb'` | 100 kilobytes |
+| `'1mb'` | 1 megabyte |
+| `'500000'` | 500,000 bytes (string, parsed by the `bytes` library) |
+| `500000` | 500,000 bytes (number) |
+
+The default is `'100kb'`. In industry, you typically set this based on what your API actually needs. A typical REST API that accepts small JSON payloads (user profiles, settings, form data) rarely needs more than a few hundred kilobytes. But if your API accepts large documents or embedded data, you might raise it.
+
+**Why does this matter?** Without a limit, a malicious client could send a multi-gigabyte JSON body to your server. Your server would try to buffer the entire thing into memory, allocate space to parse it, and potentially crash from running out of memory. This is a denial-of-service vector. The `limit` option is your first line of defense against it.
+
+#### `strict`
+
+Controls what top-level JSON values Express will accept:
+
+```javascript
+app.use(express.json({ strict: true }));  // default
+```
+
+When `strict` is `true`, the JSON body must be either an **object** (`{}`) or an **array** (`[]`). If the client sends a standalone string, number, boolean, or `null` as the entire body, Express will reject it with a parse error.
+
+```javascript
+// Accepted with strict: true
+{ "name": "Shubham" }
+[1, 2, 3]
+
+// Rejected with strict: true
+"just a string"
+42
+true
+null
+```
+
+When `strict` is `false`, any valid JSON value is accepted. This is rarely needed in practice because virtually all APIs exchange objects or arrays.
+
+#### `type`
+
+Tells Express which requests should be treated as JSON. By default it matches `application/json`.
+
+```javascript
+app.use(express.json({ type: 'application/vnd.api+json' }));
+```
+
+This is useful when your API uses a custom media type. For example, the JSON:API specification uses `application/vnd.api+json` as its content type. Without configuring the `type` option, `express.json()` would ignore requests with that content type.
+
+You can also pass a function that receives the `req` object and returns `true` or `false`:
+
+```javascript
+app.use(express.json({
+  type: (req) => req.headers['content-type']?.includes('json')
+}));
+```
+
+#### `inflate`
+
+Deals with compressed request bodies. A client may compress the request body using gzip, deflate, or brotli and indicate that using the `Content-Encoding` header:
+
+```
+Content-Encoding: gzip
+```
+
+By default, `inflate` is `true`, meaning Express will decompress supported compressed bodies before parsing them as JSON. If you set it to `false`, any request with a `Content-Encoding` header will be rejected with a `415 Unsupported Media Type` status.
+
+```javascript
+app.use(express.json({ inflate: false }));
+```
+
+In most applications, you leave this at `true`. The only reason to disable it is if you have specific security or performance concerns about accepting compressed payloads.
+
+#### `reviver`
+
+This is passed directly to `JSON.parse()` as its second argument. A reviver is a function that transforms the parsed values during parsing. It receives every key-value pair and can modify the value before it is placed into the resulting object.
+
+```javascript
+app.use(express.json({
+  reviver: (key, value) => {
+    // Convert all date strings to Date objects
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) {
+      return new Date(value);
+    }
+    return value;
+  }
+}));
+```
+
+This is an advanced option that most applications never use.
+
+#### `verify`
+
+A function that is called before the body is parsed. It receives the raw request, response, and the body buffer. If the function throws an error, parsing is aborted.
+
+```javascript
+app.use(express.json({
+  verify: (req, res, buf, encoding) => {
+    // Store the raw body for webhook signature verification
+    req.rawBody = buf.toString(encoding || 'utf8');
+  }
+}));
+```
+
+The most common real-world use case for `verify` is **webhook signature validation**. Services like Stripe, GitHub, and Slack sign their webhook payloads using the raw body. You need access to the exact raw bytes (before parsing) to verify that signature. The `verify` callback gives you that access.
+
+---
+
+## `express.static()`
+
+### What it does
+
+`express.static()` is middleware for serving static files from a directory on your server to the client. Static files are files that do not change per request: HTML pages, CSS stylesheets, JavaScript files, images, fonts, PDFs, and so on.
+
+```javascript
+import express from 'express';
+
+const app = express();
+
+app.use(express.static('public'));
+```
+
+### How it works
+
+Suppose your project directory looks like this:
+
+```
+my-app/
+  server.js
+  public/
+    index.html
+    style.css
+    script.js
+    image.png
+```
+
+When you write `express.static('public')`, Express creates a middleware that does the following for every incoming request:
+
+1. Take the URL path from the request (for example, `/style.css`).
+2. Look for a file at that path inside the `public` directory (for example, `public/style.css`).
+3. If the file exists, read it and send it to the client with the appropriate `Content-Type` header.
+4. If the file does not exist, call `next()` to let other middleware or route handlers deal with the request.
+
+This means the following URLs would serve the corresponding files:
+
+| URL | File Served |
+|-----|-------------|
+| `http://localhost:3000/index.html` | `public/index.html` |
+| `http://localhost:3000/style.css` | `public/style.css` |
+| `http://localhost:3000/script.js` | `public/script.js` |
+| `http://localhost:3000/image.png` | `public/image.png` |
+
+Notice that `public` does not appear in the URL. The client does not know (and should not know) the name of the directory on your server. From the client's perspective, those files exist at the root of your domain.
+
+### Using a mount path
+
+You can prefix all static file URLs with a path:
+
+```javascript
+app.use('/assets', express.static('public'));
+```
+
+Now the same files are served under `/assets`:
+
+| URL | File Served |
+|-----|-------------|
+| `http://localhost:3000/assets/style.css` | `public/style.css` |
+| `http://localhost:3000/assets/image.png` | `public/image.png` |
+
+This is useful when you want to namespace your static files or when you have multiple static directories.
+
+### Multiple static directories
+
+You can call `express.static()` multiple times with different directories:
+
+```javascript
+app.use(express.static('public'));
+app.use(express.static('uploads'));
+app.use(express.static('assets'));
+```
+
+Express searches the directories in the order they are defined. If a file called `logo.png` exists in both `public/` and `assets/`, the one in `public/` is served because it was registered first.
+
+### Using an absolute path
+
+The path you pass to `express.static()` is resolved relative to the directory where you launch your Node.js process, not relative to the file where the code lives. This can cause problems if you run your server from a different directory. To avoid this, use an absolute path:
+
+```javascript
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+app.use(express.static(path.join(__dirname, 'public')));
+```
+
+This guarantees that Express looks for the `public` folder in the same directory as the current file, regardless of where you run the `node` command from.
+
+### Options
+
+```javascript
+app.use(express.static('public', {
+  dotfiles: 'ignore',
+  etag: true,
+  extensions: false,
+  fallthrough: true,
+  immutable: false,
+  index: 'index.html',
+  lastModified: true,
+  maxAge: 0,
+  redirect: true,
+  setHeaders: undefined
+}));
+```
+
+#### `dotfiles`
+
+Controls how files starting with a dot (like `.env`, `.gitignore`, `.htaccess`) are handled:
+
+| Value | Behavior |
+|-------|----------|
+| `'allow'` | Serve dotfiles like any other file |
+| `'deny'` | Respond with `403 Forbidden` |
+| `'ignore'` | Pretend the file does not exist, respond with `404` (default) |
+
+In production, you almost always want `'ignore'` or `'deny'`. Files like `.env` contain sensitive configuration (database passwords, API keys) and must never be served to clients.
+
+#### `etag`
+
+When `true` (the default), Express generates an `ETag` header for each file. ETags are used for **cache validation**. The browser stores the ETag the first time it downloads a file. On subsequent requests, it sends the ETag back in an `If-None-Match` header. If the file has not changed, the server responds with `304 Not Modified` instead of re-sending the entire file.
+
+This saves bandwidth and makes your application faster, especially for files that rarely change (like fonts and logo images).
+
+#### `extensions`
+
+When set to an array of file extensions, Express will try appending those extensions to a URL that does not have one:
+
+```javascript
+app.use(express.static('public', { extensions: ['html', 'htm'] }));
+```
+
+With this setting, a request to `/about` would first look for `public/about`, then `public/about.html`, then `public/about.htm`. This lets you serve clean URLs without file extensions.
+
+#### `fallthrough`
+
+When `true` (the default), if a file is not found, Express calls `next()` to let downstream middleware handle the request. When `false`, Express calls `next(err)` with a 404 error instead.
+
+In a typical application with a single static directory, `true` is appropriate because you want your route handlers to run if the request is not for a static file. If you have multiple static directories stacked, `true` allows Express to search through each one before giving up.
+
+#### `immutable`
+
+When `true`, Express adds the `immutable` directive to the `Cache-Control` header. This tells the browser: "This file will never change. Do not even bother checking." This is powerful for files whose names include content hashes (like `app.a3b8c9d2.js`). If the content changes, the filename changes, so the browser fetches the new file naturally.
+
+```javascript
+app.use(express.static('dist', { immutable: true, maxAge: '1y' }));
+```
+
+#### `index`
+
+The default file to serve when a directory is requested. Defaults to `'index.html'`. When a client requests `http://localhost:3000/`, Express serves `public/index.html`.
+
+Set this to `false` to disable directory indexing entirely:
+
+```javascript
+app.use(express.static('public', { index: false }));
+```
+
+#### `lastModified`
+
+When `true` (the default), sets the `Last-Modified` header to the file's last modification date on the filesystem. Like ETags, this enables cache validation.
+
+#### `maxAge`
+
+Sets the `Cache-Control: max-age` header, telling the browser how long (in milliseconds) to cache the file before checking again. Defaults to `0` (always check).
+
+```javascript
+app.use(express.static('public', { maxAge: '1d' }));   // 1 day
+app.use(express.static('public', { maxAge: '7d' }));   // 7 days
+app.use(express.static('public', { maxAge: 86400000 })); // 1 day in ms
+```
+
+In production, you typically set a long `maxAge` for assets that include content hashes in their filenames and a short `maxAge` for assets that might change (like `index.html`).
+
+#### `redirect`
+
+When `true` (the default), if a request matches a directory name, Express redirects to the same path with a trailing slash appended. For example, a request to `/images` redirects to `/images/`.
+
+#### `setHeaders`
+
+A function that lets you set custom response headers for each file served:
+
+```javascript
+app.use(express.static('public', {
+  setHeaders: (res, filePath, stat) => {
+    if (filePath.endsWith('.html')) {
+      res.set('Cache-Control', 'no-cache');
+    }
+  }
+}));
+```
+
+This is useful for setting different caching policies for different file types. For example, you might want HTML files to be re-validated on every request while CSS and JavaScript files with content hashes are cached for a year.
+
+---
+
+## `express.raw()`
+
+### What it does
+
+`express.raw()` is a body-parsing middleware, just like `express.json()`. The difference is what it produces: instead of parsing the body into a JavaScript object, `express.raw()` gives you the body as a **Buffer**.
+
+A Buffer is Node.js's representation of raw binary data. It is an array of bytes with no interpretation applied. Express does not try to turn those bytes into a string, a number, or an object. It hands them to you exactly as they arrived.
+
+```javascript
+import express from 'express';
+
+const app = express();
+
+app.use(express.raw());
+
+app.post('/upload', (req, res) => {
+  console.log(req.body);           // <Buffer 89 50 4e 47 ...>
+  console.log(req.body.length);    // number of bytes
+  res.send('Received binary data');
+});
+```
+
+### When to use it
+
+`express.raw()` is designed for situations where the incoming data is not text-based. Some examples:
+
+- A client sends a binary file (an image, a PDF, a protobuf message) directly in the body.
+- You receive webhook payloads that you need to verify using HMAC signatures on the raw bytes.
+- You are building an API endpoint that accepts binary formats like Protocol Buffers or MessagePack.
+
+### Content type matching
+
+By default, `express.raw()` only parses requests whose `Content-Type` matches `application/octet-stream`. This is the generic binary data MIME type.
+
+```
+Content-Type: application/octet-stream
+```
+
+If a request comes in with `Content-Type: application/json`, `express.raw()` ignores it entirely. This is the same content-type-gating behavior that all Express body parsers use.
+
+### Options
+
+```javascript
+app.use(express.raw({
+  inflate: true,
+  limit: '100kb',
+  type: 'application/octet-stream',
+  verify: undefined
+}));
+```
+
+#### `limit`
+
+Same as `express.json()`. Controls the maximum body size:
+
+```javascript
+app.use(express.raw({ limit: '5mb' }));
+```
+
+For binary uploads, you will often need to raise this from the default `100kb`.
+
+#### `type`
+
+Controls which content types this middleware will process. Change it when your binary data uses a custom MIME type:
+
+```javascript
+// Parse Protocol Buffer payloads
+app.use(express.raw({ type: 'application/x-protobuf' }));
+
+// Parse multiple binary types
+app.use(express.raw({ type: ['application/octet-stream', 'image/*'] }));
+```
+
+#### `inflate`
+
+Same as `express.json()`. When `true`, decompresses gzip/deflate bodies before giving you the Buffer.
+
+#### `verify`
+
+Same as `express.json()`. A function called with the raw request and body buffer before parsing, allowing you to abort if something looks wrong.
+
+---
+
+## `express.text()`
+
+### What it does
+
+`express.text()` is another body-parsing middleware. It reads the request body and makes it available on `req.body` as a **plain string**. No JSON parsing, no key-value pair splitting. Just the raw text content of the body, decoded from bytes into a string using the specified character encoding.
+
+```javascript
+import express from 'express';
+
+const app = express();
+
+app.use(express.text());
+
+app.post('/log', (req, res) => {
+  console.log(typeof req.body); // 'string'
+  console.log(req.body);        // 'This is plain text sent by the client'
+  res.send('Logged');
+});
+```
+
+### When to use it
+
+You would use `express.text()` when the client sends data that is inherently textual but not structured as JSON or URL-encoded form data:
+
+- Log messages sent from another service.
+- CSV data sent as plain text.
+- XML payloads (though for XML you might also look at a dedicated XML parser).
+- Webhook payloads that arrive as plain text.
+- Any endpoint where you want the raw string content without any parsing applied.
+
+### Content type matching
+
+By default, `express.text()` only processes requests with `Content-Type: text/plain`:
+
+```
+Content-Type: text/plain
+```
+
+You can change this with the `type` option, just like the other body parsers.
+
+### Options
+
+```javascript
+app.use(express.text({
+  defaultCharset: 'utf-8',
+  inflate: true,
+  limit: '100kb',
+  type: 'text/plain',
+  verify: undefined
+}));
+```
+
+#### `defaultCharset`
+
+The character encoding to use when the `Content-Type` header does not specify one. Defaults to `'utf-8'`, which handles virtually all text on the modern web. You would only change this if you interact with legacy systems that use older encodings.
+
+#### `limit`, `inflate`, `type`, `verify`
+
+These behave identically to their counterparts in `express.json()` and `express.raw()`.
+
+### Example: accepting CSV data
+
+```javascript
+app.use(express.text({ type: 'text/csv' }));
+
+app.post('/import', (req, res) => {
+  const rows = req.body.split('\n').map(row => row.split(','));
+  console.log(rows);
+  // [['name', 'age', 'email'], ['Shubham', '23', 'shubham@example.com'], ...]
+  res.send('Imported');
+});
+```
+
+---
+
+## `express.urlencoded()`
+
+### What it does
+
+`express.urlencoded()` is a body-parsing middleware specifically for data sent using the **URL-encoded form format**. This is the format that HTML forms use by default when submitted.
+
+You have seen HTML forms like this:
+
+```html
+<form method="POST" action="/login">
+  <input name="username">
+  <input name="password">
+  <button type="submit">Login</button>
+</form>
+```
+
+When a user fills out this form and clicks "Login", the browser sends an HTTP request that looks like this:
+
+```
+POST /login HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+
+username=shubham&password=hello123
+```
+
+Notice that the body is not JSON. It is a set of key-value pairs separated by `&`, with keys and values joined by `=`. Spaces are encoded as `+`, and special characters are percent-encoded (for example, `@` becomes `%40`).
+
+`express.urlencoded()` reads that string and converts it into a JavaScript object:
+
+```javascript
+app.use(express.urlencoded({ extended: true }));
+
+app.post('/login', (req, res) => {
+  console.log(req.body);
+  // { username: 'shubham', password: 'hello123' }
+});
+```
+
+Without this middleware, `req.body` would be `undefined`.
+
+### Options
+
+```javascript
+app.use(express.urlencoded({
+  extended: true,
+  inflate: true,
+  limit: '100kb',
+  parameterLimit: 1000,
+  type: 'application/x-www-form-urlencoded',
+  verify: undefined
+}));
+```
+
+#### `extended`
+
+This is the most important option and the one you will always see in examples. It controls **which library** Express uses internally to parse the URL-encoded string:
+
+| Value | Library Used | Nested Objects | Arrays |
+|-------|-------------|----------------|--------|
+| `true` | `qs` | Supported | Supported |
+| `false` | `querystring` (Node.js built-in) | Not supported | Limited |
+
+With `extended: true`, the parser can handle nested objects and arrays in form data:
+
+```html
+<input name="user[name]" value="Shubham">
+<input name="user[age]" value="23">
+<input name="tags[]" value="nodejs">
+<input name="tags[]" value="express">
+```
+
+Parsed result:
+
+```javascript
+{
+  user: { name: 'Shubham', age: '23' },
+  tags: ['nodejs', 'express']
+}
+```
+
+With `extended: false`, the same input produces flat keys:
+
+```javascript
+{
+  'user[name]': 'Shubham',
+  'user[age]': '23',
+  'tags[]': ['nodejs', 'express']
+}
+```
+
+In most applications, you want `extended: true`. It gives you richer parsing for no real cost.
+
+#### `parameterLimit`
+
+Controls the maximum number of key-value pairs that the parser will accept. Defaults to `1000`. If the body contains more parameters than this, the parser rejects it with a `413` error.
+
+This is a security measure. An attacker could send a body with millions of parameters, forcing the parser to allocate enormous amounts of memory and CPU time to process them. This is called a **hash collision denial-of-service attack** (hashdos). Limiting the number of parameters mitigates this risk.
+
+#### `limit`, `inflate`, `type`, `verify`
+
+These behave identically to the same options in `express.json()`.
+
+---
+
+## Using Multiple Body Parsers Together
+
+In a real application, your server might receive both JSON requests (from API clients) and form submissions (from HTML pages). You register multiple body parsers, and each one handles the content type it is designed for:
+
+```javascript
+import express from 'express';
+
+const app = express();
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+app.post('/api/users', (req, res) => {
+  // req.body works whether the client sent JSON or form data
+  console.log(req.body);
+  res.json({ received: req.body });
+});
+```
+
+When a request arrives:
+
+1. `express.json()` checks the `Content-Type`. If it is `application/json`, it parses the body and populates `req.body`. Otherwise, it calls `next()`.
+2. `express.urlencoded()` checks the `Content-Type`. If it is `application/x-www-form-urlencoded`, it parses the body and populates `req.body`. Otherwise, it calls `next()`.
+3. The route handler runs with `req.body` populated by whichever parser matched.
+
+The order does not matter for correctness (because each parser checks `Content-Type` independently), but it is conventional to list them in this order.
+
+---
+
+## Quick Reference
+
+| Method | What `req.body` becomes | Default Content-Type |
+|--------|------------------------|---------------------|
+| `express.json()` | JavaScript object or array | `application/json` |
+| `express.urlencoded()` | JavaScript object (flat or nested) | `application/x-www-form-urlencoded` |
+| `express.raw()` | Buffer (raw bytes) | `application/octet-stream` |
+| `express.text()` | String | `text/plain` |
+| `express.static()` | N/A (serves files, not a body parser) | N/A |
+
+### Common Options Across All Body Parsers
+
+| Option | Purpose | Default |
+|--------|---------|---------|
+| `limit` | Maximum body size | `'100kb'` |
+| `inflate` | Decompress gzip/deflate bodies | `true` |
+| `type` | Content types to parse | Varies by parser |
+| `verify` | Pre-parse validation function | `undefined` |

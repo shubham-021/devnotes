@@ -1,0 +1,480 @@
+---
+title: "Express Router"
+description: Understanding the Express Router for modular route handling and application structure
+---
+
+## What is a Router?
+
+As your Express application grows, putting every route in a single file becomes unmanageable. An application with user routes, product routes, order routes, authentication routes, and admin routes would result in a server file hundreds or thousands of lines long.
+
+The Express **Router** solves this problem. A Router is a mini Express application that handles only the routing part. It has its own middleware stack and its own route definitions, but it does not listen on a port or manage server settings. You create a Router, define routes on it, and then mount it onto your main application at a specific URL prefix.
+
+Think of it this way: your main `app` is the entire building, and each Router is a separate floor. Each floor has its own rooms (routes) and hallways (middleware), but they all exist within the same building.
+
+```javascript
+import express from 'express';
+
+const app = express();
+const router = express.Router();
+
+router.get('/', (req, res) => {
+  res.send('User list');
+});
+
+router.get('/:id', (req, res) => {
+  res.send(`User ${req.params.id}`);
+});
+
+app.use('/users', router);
+
+app.listen(3000);
+```
+
+In this example, the router handles:
+
+| URL | Route in Router |
+|-----|----------------|
+| `GET /users` | `router.get('/')` |
+| `GET /users/42` | `router.get('/:id')` |
+
+The `/users` prefix is defined only once, in `app.use('/users', router)`. The routes inside the router do not know or care about this prefix. They define paths relative to wherever they are mounted.
+
+---
+
+## Creating a Router
+
+### `express.Router(options)`
+
+Creates a new Router instance.
+
+```javascript
+const router = express.Router();
+```
+
+You can pass an options object:
+
+```javascript
+const router = express.Router({
+  caseSensitive: false,
+  mergeParams: false,
+  strict: false
+});
+```
+
+#### `caseSensitive`
+
+When `false` (the default), `/Users` and `/users` are treated as the same route. When `true`, they are treated as different routes.
+
+```javascript
+const router = express.Router({ caseSensitive: true });
+
+router.get('/Users', (req, res) => res.send('Uppercase'));
+router.get('/users', (req, res) => res.send('Lowercase'));
+
+// GET /Users -> 'Uppercase'
+// GET /users -> 'Lowercase'
+```
+
+Most applications leave this at `false` because URLs are conventionally case-insensitive.
+
+#### `mergeParams`
+
+When `true`, the route parameters from the parent router are merged into the child router's `req.params`. When `false` (the default), the child router only sees its own parameters.
+
+```javascript
+const userRouter = express.Router({ mergeParams: true });
+
+userRouter.get('/posts/:postId', (req, res) => {
+  // With mergeParams: true, req.params has BOTH :userId and :postId
+  res.json({
+    userId: req.params.userId,   // From the parent mount
+    postId: req.params.postId    // From this router
+  });
+});
+
+app.use('/users/:userId', userRouter);
+
+// GET /users/42/posts/7
+// req.params = { userId: '42', postId: '7' }
+```
+
+Without `mergeParams: true`, `req.params.userId` would be `undefined` inside `userRouter` because the `:userId` parameter belongs to the parent.
+
+This option is essential when you have nested routers that need to access parameters defined in the parent's mount path.
+
+#### `strict`
+
+When `false` (the default), `/users` and `/users/` are treated as the same route. When `true`, they are treated as different routes.
+
+```javascript
+const router = express.Router({ strict: true });
+
+router.get('/users', (req, res) => res.send('Without slash'));
+router.get('/users/', (req, res) => res.send('With slash'));
+
+// GET /users  -> 'Without slash'
+// GET /users/ -> 'With slash'
+```
+
+Most applications leave this at `false`.
+
+---
+
+## Router Methods
+
+### `router.all(path, handler)`
+
+Matches all HTTP methods for a given path. This is useful for middleware that should run regardless of the HTTP method.
+
+```javascript
+const router = express.Router();
+
+// This runs for GET, POST, PUT, DELETE, PATCH, etc. to /secret
+router.all('/secret', (req, res, next) => {
+  console.log(`${req.method} /secret accessed`);
+  // Check authentication, log access, etc.
+  next();
+});
+
+router.get('/secret', (req, res) => {
+  res.send('Secret data');
+});
+
+router.post('/secret', (req, res) => {
+  res.send('Secret updated');
+});
+```
+
+A common real-world use for `router.all()` is requiring authentication on every request to a particular path, regardless of the HTTP method:
+
+```javascript
+router.all('/admin/*', (req, res, next) => {
+  if (!req.user || !req.user.isAdmin) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+});
+```
+
+---
+
+### `router.METHOD(path, handler)`
+
+Defines a route that responds to a specific HTTP method. `METHOD` is the lowercase name of the HTTP method: `get`, `post`, `put`, `patch`, `delete`, `options`, `head`, etc.
+
+```javascript
+const router = express.Router();
+
+router.get('/users', (req, res) => {
+  res.json({ users: [] });
+});
+
+router.post('/users', (req, res) => {
+  const user = req.body;
+  res.status(201).json(user);
+});
+
+router.put('/users/:id', (req, res) => {
+  res.json({ updated: req.params.id });
+});
+
+router.patch('/users/:id', (req, res) => {
+  res.json({ patched: req.params.id });
+});
+
+router.delete('/users/:id', (req, res) => {
+  res.sendStatus(204);
+});
+```
+
+Each of these methods corresponds to an HTTP method:
+
+| Express Method | HTTP Method | Typical Use |
+|---------------|-------------|-------------|
+| `router.get()` | GET | Read/retrieve a resource |
+| `router.post()` | POST | Create a new resource |
+| `router.put()` | PUT | Replace a resource entirely |
+| `router.patch()` | PATCH | Partially update a resource |
+| `router.delete()` | DELETE | Remove a resource |
+| `router.options()` | OPTIONS | Preflight CORS check |
+| `router.head()` | HEAD | Like GET but without the body |
+
+You can attach multiple handlers (middleware) to a single route. They execute in order:
+
+```javascript
+router.get('/users/:id',
+  validateId,      // First: validate the ID parameter
+  checkAuth,       // Second: check authentication
+  (req, res) => {  // Third: send the response
+    res.json({ user: req.user });
+  }
+);
+```
+
+---
+
+### `router.param(name, callback)`
+
+Adds a callback that runs whenever a specific route parameter is present in the URL. This is a form of parameter-level middleware.
+
+```javascript
+const router = express.Router();
+
+router.param('userId', (req, res, next, value) => {
+  // 'value' is the actual value of :userId from the URL
+  console.log(`userId parameter: ${value}`);
+
+  // Typically, you look up the resource here
+  const user = findUserById(value);
+
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  // Attach the found user to the request for downstream handlers
+  req.user = user;
+  next();
+});
+
+// Now any route with :userId automatically has req.user populated
+router.get('/users/:userId', (req, res) => {
+  res.json(req.user); // Already loaded by router.param
+});
+
+router.put('/users/:userId', (req, res) => {
+  // req.user is available here too
+  Object.assign(req.user, req.body);
+  res.json(req.user);
+});
+
+router.delete('/users/:userId', (req, res) => {
+  deleteUser(req.user.id);
+  res.sendStatus(204);
+});
+```
+
+The callback receives four arguments:
+
+| Argument | Description |
+|----------|-------------|
+| `req` | The request object |
+| `res` | The response object |
+| `next` | The next middleware function |
+| `value` | The actual string value of the parameter |
+
+`router.param()` eliminates duplicate code. Without it, you would need to look up the user in every single route handler. With it, you write the lookup once and it runs automatically whenever `:userId` appears in a matched route.
+
+The callback only runs once per request, even if the same parameter name appears in multiple matched routes.
+
+---
+
+### `router.route(path)`
+
+Creates a chainable route object for a single path. This is syntactic sugar that lets you define multiple HTTP method handlers for the same path without repeating the path string.
+
+```javascript
+const router = express.Router();
+
+router.route('/users')
+  .get((req, res) => {
+    res.json({ users: [] });
+  })
+  .post((req, res) => {
+    const user = req.body;
+    res.status(201).json(user);
+  });
+
+router.route('/users/:id')
+  .get((req, res) => {
+    res.json({ id: req.params.id });
+  })
+  .put((req, res) => {
+    res.json({ updated: req.params.id });
+  })
+  .patch((req, res) => {
+    res.json({ patched: req.params.id });
+  })
+  .delete((req, res) => {
+    res.sendStatus(204);
+  });
+```
+
+This is equivalent to writing separate `router.get()`, `router.post()`, etc. calls, but it groups related handlers together and avoids path string duplication. The resulting code reads almost like a specification: "for the path `/users`, handle GET this way and POST that way."
+
+`router.route()` returns a special object that has all the HTTP method functions on it. Each method call returns the same object, which is why you can chain them.
+
+---
+
+### `router.use(path, middleware)`
+
+Mounts middleware on the router. If you specify a path, the middleware only runs for requests whose URL starts with that path. If you omit the path, the middleware runs for every request handled by this router.
+
+```javascript
+const router = express.Router();
+
+// Middleware for ALL routes in this router
+router.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  next();
+});
+
+// Middleware only for routes starting with /admin
+router.use('/admin', (req, res, next) => {
+  if (!req.user?.isAdmin) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+});
+
+router.get('/profile', (req, res) => {
+  res.send('Profile page');
+});
+
+router.get('/admin/dashboard', (req, res) => {
+  res.send('Admin dashboard');
+});
+```
+
+You can also mount another router as middleware, which is how you nest routers:
+
+```javascript
+const apiRouter = express.Router();
+const usersRouter = express.Router();
+const postsRouter = express.Router();
+
+usersRouter.get('/', (req, res) => res.json({ users: [] }));
+usersRouter.get('/:id', (req, res) => res.json({ id: req.params.id }));
+
+postsRouter.get('/', (req, res) => res.json({ posts: [] }));
+postsRouter.get('/:id', (req, res) => res.json({ id: req.params.id }));
+
+apiRouter.use('/users', usersRouter);
+apiRouter.use('/posts', postsRouter);
+
+app.use('/api', apiRouter);
+```
+
+This creates the following URL structure:
+
+| URL | Router Chain |
+|-----|-------------|
+| `GET /api/users` | app -> apiRouter -> usersRouter |
+| `GET /api/users/42` | app -> apiRouter -> usersRouter |
+| `GET /api/posts` | app -> apiRouter -> postsRouter |
+| `GET /api/posts/7` | app -> apiRouter -> postsRouter |
+
+---
+
+## Structuring a Real Application
+
+In a real project, each router lives in its own file. Here is a typical structure:
+
+```
+src/
+  app.js
+  routes/
+    index.js
+    users.js
+    products.js
+    orders.js
+  middleware/
+    auth.js
+    logging.js
+```
+
+**`routes/users.js`**:
+
+```javascript
+import { Router } from 'express';
+
+const router = Router();
+
+router.get('/', (req, res) => {
+  res.json({ users: [] });
+});
+
+router.get('/:id', (req, res) => {
+  res.json({ id: req.params.id });
+});
+
+router.post('/', (req, res) => {
+  res.status(201).json(req.body);
+});
+
+router.put('/:id', (req, res) => {
+  res.json({ updated: req.params.id });
+});
+
+router.delete('/:id', (req, res) => {
+  res.sendStatus(204);
+});
+
+export default router;
+```
+
+**`routes/index.js`**:
+
+```javascript
+import { Router } from 'express';
+import usersRouter from './users.js';
+import productsRouter from './products.js';
+import ordersRouter from './orders.js';
+
+const router = Router();
+
+router.use('/users', usersRouter);
+router.use('/products', productsRouter);
+router.use('/orders', ordersRouter);
+
+export default router;
+```
+
+**`app.js`**:
+
+```javascript
+import express from 'express';
+import routes from './routes/index.js';
+
+const app = express();
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+app.use('/api', routes);
+
+app.listen(3000, () => {
+  console.log('Server running on port 3000');
+});
+```
+
+This structure gives you:
+
+- **Separation of concerns**: Each resource has its own file.
+- **Testability**: You can test each router in isolation by mounting it in a test application.
+- **Maintainability**: Adding a new resource means creating a new file and adding one line to the index.
+- **Team collaboration**: Different developers can work on different route files without merge conflicts.
+
+---
+
+## Quick Reference
+
+| Method | Purpose |
+|--------|---------|
+| `express.Router(options)` | Create a new router instance |
+| `router.all(path, handler)` | Match all HTTP methods for a path |
+| `router.get(path, handler)` | Handle GET requests |
+| `router.post(path, handler)` | Handle POST requests |
+| `router.put(path, handler)` | Handle PUT requests |
+| `router.patch(path, handler)` | Handle PATCH requests |
+| `router.delete(path, handler)` | Handle DELETE requests |
+| `router.param(name, callback)` | Parameter-level middleware |
+| `router.route(path)` | Chainable route handler |
+| `router.use(path, middleware)` | Mount middleware or sub-routers |
+
+### Router Options
+
+| Option | Default | Purpose |
+|--------|---------|---------|
+| `caseSensitive` | `false` | Treat `/Users` and `/users` differently |
+| `mergeParams` | `false` | Inherit parent router's `req.params` |
+| `strict` | `false` | Treat `/users` and `/users/` differently |

@@ -151,9 +151,6 @@ export const navigation: NavSection[] = [
         title: "Node.js",
         items: [
             { title: "ES Modules", slug: "nodejs/es-modules" },
-            { title: "Express Middleware", slug: "nodejs/express-middleware" },
-            { title: "Express Server", slug: "nodejs/express-server" },
-            { title: "Express Request", slug: "nodejs/express-request" },
             { title: "Cookie Authentication", slug: "nodejs/cookie-authentication" },
             { title: "Token Authentication", slug: "nodejs/token-authentication" },
             { title: "Full-Stack Authentication", slug: "nodejs/authentication-full-stack" },
@@ -163,6 +160,18 @@ export const navigation: NavSection[] = [
             { title: "File System", slug: "nodejs/file-system" },
             { title: "Paths", slug: "nodejs/paths" },
             { title: "CLI Tools", slug: "nodejs/cli-tools" },
+        ],
+    },
+    {
+        title: "Express.js",
+        items: [
+            { title: "Express API", slug: "expressjs/express-api" },
+            { title: "Express Middleware", slug: "expressjs/express-middleware" },
+            { title: "Express Server", slug: "expressjs/express-server" },
+            { title: "Express Request", slug: "expressjs/express-request" },
+            { title: "Express Request Reference", slug: "expressjs/express-request-ref" },
+            { title: "Express Response Reference", slug: "expressjs/express-response-ref" },
+            { title: "Express Router", slug: "expressjs/express-router" },
         ],
     },
     {
