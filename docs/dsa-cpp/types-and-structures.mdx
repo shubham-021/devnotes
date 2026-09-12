@@ -1,0 +1,154 @@
+---
+title: Types and Structures
+description: Structs, classes, their relationship, and user-defined types in C++
+---
+
+## User-Defined Types
+
+C++ provides several constructs for defining your own types. The full taxonomy:
+
+```
+User-defined types
+  struct
+  class
+  union
+  enum
+```
+
+Both `struct` and `class` are language constructs used to define user-defined types. They are not themselves the only kinds of user-defined types.
+
+```cpp
+struct Vector {
+    int size;
+};
+```
+
+This defines a user-defined type called `Vector`. The same is true for:
+
+```cpp
+class Vector {
+    int size;
+};
+```
+
+---
+
+## Struct vs Class
+
+Both `struct` and `class` can contain data members, member functions, constructors, destructors, private/public members, inheritance, and operator overloading. There is no major capability that `class` has which `struct` fundamentally cannot have.
+
+The language-level difference is their **default access level**.
+
+### Struct: public by default
+
+```cpp
+struct A {
+    int x;  // public by default
+};
+```
+
+This is equivalent to:
+
+```cpp
+struct A {
+public:
+    int x;
+};
+```
+
+### Class: private by default
+
+```cpp
+class A {
+    int x;  // private by default
+};
+```
+
+This is equivalent to:
+
+```cpp
+class A {
+private:
+    int x;
+};
+```
+
+### Both can override their defaults
+
+A struct can have private members:
+
+```cpp
+struct A {
+private:
+    int x;
+
+public:
+    void set_x(int n) {
+        x = n;
+    }
+};
+```
+
+A class can have public members:
+
+```cpp
+class A {
+public:
+    int x;
+};
+```
+
+Both are completely valid.
+
+---
+
+## Why Class Exists
+
+C already had `struct`. C programmers traditionally used structs for grouping related data. When C++ was designed, it wanted to preserve that existing behavior and convention.
+
+C++ also wanted a construct whose default access was `private`, matching the idea of an encapsulated, object-oriented type. So `class` was introduced with `private` as the default.
+
+The convention that emerged:
+
+- `struct` with public-by-default is commonly used for simple data aggregates
+- `class` with private-by-default is commonly used for encapsulated objects with behavior
+
+Do not describe `struct` as technically meaning "a collection of different types." That is a common usage convention, not its complete language definition. Both `struct` and `class` define user-defined types with the same capabilities.
+
+---
+
+## A Practical Example
+
+Consider a type that groups an array size with a pointer to its elements:
+
+```cpp
+struct Vector {
+    int size;
+    double* elem;
+};
+```
+
+This is a user-defined type. It can be used to create objects:
+
+```cpp
+Vector v;
+v.size = 5;
+v.elem = new double[5];
+```
+
+Using a class with encapsulation, the same concept becomes:
+
+```cpp
+class Vector {
+public:
+    Vector(int s);
+    double& operator[](int i);
+    int size();
+
+private:
+    int sz;
+    double* elem;
+};
+```
+
+The public section tells users what they can do. The private section hides how it works internally. This separation is the core motivation for using `class` over `struct` when building types with behavior.

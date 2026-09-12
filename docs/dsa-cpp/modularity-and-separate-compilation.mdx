@@ -1,0 +1,349 @@
+---
+title: Modularity and Separate Compilation
+description: Interfaces, implementations, header files, source files, the compiler, the linker, and building a custom module
+---
+
+## The Core Idea
+
+A large C++ program should be divided into smaller, semi-independent parts: functions, classes, templates, libraries. The key to managing these parts is clearly defining how they interact.
+
+This comes down to one fundamental separation: **interface** vs **implementation**.
+
+---
+
+## Interface vs Implementation
+
+A declaration tells the compiler what something looks like without revealing how it works:
+
+```cpp
+double sqrt(double);
+```
+
+This says: there exists a function called `sqrt` that takes a `double` and returns a `double`. A programmer can write:
+
+```cpp
+double x = sqrt(25.0);
+```
+
+without knowing the algorithm used internally.
+
+The implementation provides the actual body:
+
+```cpp
+double sqrt(double d) {
+    // complicated algorithm
+}
+```
+
+The interface answers "what can I use?" The implementation answers "how does it actually work?"
+
+---
+
+## Interface for a Class
+
+The `Vector` class demonstrates this separation:
+
+```cpp
+class Vector {
+public:
+    Vector(int s);
+    double& operator[](int i);
+    int size();
+
+private:
+    int sz;
+    double* elem;
+};
+```
+
+This interface tells users everything they need: how to construct a `Vector`, how to access elements, and how to get the size. The implementations can live elsewhere:
+
+```cpp
+Vector::Vector(int s) : elem{new double[s]}, sz{s} {}
+
+double& Vector::operator[](int i) {
+    return elem[i];
+}
+
+int Vector::size() {
+    return sz;
+}
+```
+
+A user of the class writes:
+
+```cpp
+Vector v(5);
+v[2] = 10;
+cout << v.size();
+```
+
+If the internal representation later changes (say, replacing `double* elem` with `std::vector<double> elem`), user code does not need to change as long as the public interface stays the same.
+
+---
+
+## Declaration vs Definition
+
+These terms have precise meanings in C++:
+
+- **Declaration**: tells the compiler that something exists and describes its interface. Example: `double sqrt(double);`
+- **Definition**: provides the actual implementation or body. Example: the full function body of `sqrt`.
+
+Every definition is also a declaration, but not every declaration is a definition. A declaration without a body is sometimes called a **forward declaration**.
+
+---
+
+## Separate Compilation
+
+Different source files can be compiled independently, and their compiled results are later combined by the **linker**.
+
+A typical project structure:
+
+```
+Vector.h      <-- interface (declarations)
+Vector.cpp    <-- implementation (definitions)
+user.cpp      <-- code that uses Vector
+```
+
+---
+
+## Header Files
+
+The interface is placed in a header file:
+
+```cpp
+// Vector.h
+class Vector {
+public:
+    Vector(int s);
+    double& operator[](int i);
+    int size();
+
+private:
+    double* elem;
+    int sz;
+};
+```
+
+Any source file that needs to use `Vector` includes this header:
+
+```cpp
+#include "Vector.h"
+```
+
+The header is the **official interface** of the module. Without it, every source file that uses `Vector` would need to duplicate the declaration manually. With it, all users share one authoritative definition of the interface.
+
+---
+
+## What #include Actually Does
+
+`#include "Vector.h"` does not "find the implementation." The preprocessor copies the contents of `Vector.h` into the source file being compiled. The result is as if you had typed the header's contents directly into your source file.
+
+After preprocessing, `user.cpp` effectively contains:
+
+```
+[contents of Vector.h]
+[contents of user.cpp]
+```
+
+The compiler then processes this expanded source. It sees the `Vector` class declaration and knows how to use the type. It does not need the implementation at this stage.
+
+---
+
+## The Implementation File
+
+`Vector.cpp` contains the actual definitions:
+
+```cpp
+#include "Vector.h"
+
+Vector::Vector(int s) : elem{new double[s]}, sz{s} {}
+
+double& Vector::operator[](int i) {
+    return elem[i];
+}
+
+int Vector::size() {
+    return sz;
+}
+```
+
+The implementation file also includes `Vector.h`. This lets the compiler verify that the definitions match the declarations. If the header declares `Vector(int)` but the implementation defines `Vector(double)`, the compiler catches the mismatch.
+
+---
+
+## Compiler vs Linker
+
+### The compiler
+
+Each source file is compiled independently into an **object file**:
+
+```bash
+clang++ -c Vector.cpp    # produces Vector.o
+clang++ -c user.cpp      # produces user.o
+```
+
+`Vector.o` contains compiled machine code for the `Vector` member functions. `user.o` contains code that uses `Vector`, but at this point it has **unresolved references** to functions like `Vector::size()`. The compiler trusts the declaration and leaves placeholders.
+
+### The linker
+
+The linker combines object files and resolves those references:
+
+```bash
+clang++ Vector.o user.o -o program
+```
+
+It connects `user.o`'s reference to `Vector::size()` with `Vector.o`'s compiled definition of `Vector::size()`.
+
+If the linker cannot find a definition, it produces an error like:
+
+```
+undefined reference to 'Vector::size()'
+```
+
+This typically means the implementation object file was not included in the link step.
+
+---
+
+## Standard Library Functions
+
+When you write:
+
+```cpp
+#include <cmath>
+double x = sqrt(25.0);
+```
+
+The header `<cmath>` provides the declaration. But where is the implementation?
+
+The implementation of standard library functions is already compiled into libraries shipped with the operating system or compiler toolchain. The linker finds these automatically.
+
+The pattern is the same as with your own code:
+
+- Header provides the interface (what the function looks like)
+- Library provides the compiled implementation (what the function does)
+
+---
+
+## Building a Custom Module
+
+A minimal example: a `Calculator` module.
+
+### Project structure
+
+```
+calculator/
+  Calculator.h
+  Calculator.cpp
+  main.cpp
+```
+
+### The header (interface)
+
+```cpp
+// Calculator.h
+#pragma once
+
+int add(int a, int b);
+```
+
+`#pragma once` is an include guard. It prevents the header from being processed multiple times in the same compilation unit. The traditional alternative is:
+
+```cpp
+#ifndef CALCULATOR_H
+#define CALCULATOR_H
+
+int add(int a, int b);
+
+#endif
+```
+
+Both achieve the same result. `#pragma once` is more concise and widely supported.
+
+### The implementation
+
+```cpp
+// Calculator.cpp
+#include "Calculator.h"
+
+int add(int a, int b) {
+    return a + b;
+}
+```
+
+### Using the module
+
+```cpp
+// main.cpp
+#include <iostream>
+#include "Calculator.h"
+
+int main() {
+    int result = add(10, 20);
+    std::cout << result << '\n';
+    return 0;
+}
+```
+
+`main.cpp` knows about `add()` through the header. It does not need to know the implementation.
+
+---
+
+## Compiling the Custom Module
+
+### Single command
+
+```bash
+clang++ Calculator.cpp main.cpp -o calculator
+./calculator
+# output: 30
+```
+
+### Explicit separate compilation
+
+To see each step:
+
+```bash
+clang++ -c Calculator.cpp    # produces Calculator.o
+clang++ -c main.cpp          # produces main.o
+clang++ Calculator.o main.o -o calculator
+./calculator
+```
+
+The pipeline:
+
+```
+Calculator.cpp --> Calculator.o --\
+                                   --> linker --> calculator executable
+main.cpp       --> main.o --------/
+```
+
+---
+
+## Summary of the Build Pipeline
+
+```
+.h    interface (declarations)
+.cpp  implementation (definitions)
+        |
+     compiler
+        |
+.o    object files (compiled, with unresolved references)
+        |
+     linker
+        |
+     executable (all references resolved)
+```
+
+Key terminology:
+
+| Term | Meaning |
+|------|---------|
+| Declaration | Tells the compiler something exists and describes its interface |
+| Definition | Provides the actual implementation |
+| Header | File containing declarations/interfaces |
+| Source file | File containing implementations |
+| Object file | Compiled machine code from one source file |
+| Compiler | Translates source into object/machine code |
+| Linker | Combines object files and resolves references between them |
+| Library | Reusable pre-compiled code with an accompanying interface |

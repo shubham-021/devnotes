@@ -1,0 +1,149 @@
+---
+title: Enumerations
+description: Plain enums, scoped enums (enum class), underlying values, and why enum names are not strings
+---
+
+## The Problem
+
+Representing a fixed set of choices using plain integers is fragile:
+
+```cpp
+int day = 2;  // what does 2 mean?
+```
+
+Nothing stops you from writing `day = 42`, which has no meaningful interpretation as a day of the week. The code compiles, but the intent is unclear and the value is invalid.
+
+---
+
+## Plain Enums
+
+An `enum` creates a type representing a fixed set of named values:
+
+```cpp
+enum Day {
+    Sunday,
+    Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday
+};
+```
+
+Now:
+
+```cpp
+Day today = Tuesday;
+```
+
+The type of `today` is `Day`, not `int`. The name `Tuesday` communicates intent far better than the number `2`.
+
+### Underlying Values
+
+By default, enumerators are assigned consecutive integers starting from 0:
+
+```
+Sunday    = 0
+Monday    = 1
+Tuesday   = 2
+Wednesday = 3
+...
+```
+
+So `Day today = Tuesday` can be thought of as storing the value `2` internally. But the type is `Day`, which gives the compiler more information to work with than a raw `int`.
+
+---
+
+## Enum Names Are Not Strings
+
+A common misconception: if the underlying value is a number, can C++ map it back to the string `"Tuesday"` automatically?
+
+No. The names `Sunday`, `Monday`, `Tuesday` are identifiers used by the compiler during compilation. They are not stored as string data alongside the enum values at runtime.
+
+There is no automatic `2 -> "Tuesday"` mapping.
+
+If you need string output, you must define it yourself:
+
+```cpp
+string to_string(Day d) {
+    switch (d) {
+        case Sunday:  return "Sunday";
+        case Monday:  return "Monday";
+        case Tuesday: return "Tuesday";
+        // ...
+    }
+    return "Unknown";
+}
+```
+
+Think of it like variable names in general. When you write `int age = 25;`, the name `age` does not exist at runtime. The compiler uses it during compilation and then produces machine code that just works with memory locations and values. Enum names work the same way.
+
+---
+
+## Scoped Enums (enum class)
+
+A scoped enum requires the enum's name as a prefix when using its values:
+
+```cpp
+enum class Day {
+    Sunday,
+    Monday,
+    Tuesday
+};
+
+Day d = Day::Monday;
+```
+
+This provides two advantages over plain enums.
+
+### Avoiding Name Collisions
+
+With plain enums, two enums with the same enumerator name conflict:
+
+```cpp
+enum Color { Red, Green };
+enum TrafficLight { Red, Green };  // error: Red already defined
+```
+
+With scoped enums, the names live within their type's scope:
+
+```cpp
+enum class Color { Red, Green };
+enum class TrafficLight { Red, Green };
+
+Color c = Color::Red;
+TrafficLight t = TrafficLight::Red;  // no conflict
+```
+
+### Stronger Type Safety
+
+A plain enum value implicitly converts to an integer. A scoped enum does not:
+
+```cpp
+// plain enum
+enum Day { Monday };
+int x = Monday;  // compiles
+
+// scoped enum
+enum class Day { Monday };
+int x = Day::Monday;  // error: no implicit conversion
+```
+
+To get the underlying integer from a scoped enum, you need an explicit cast:
+
+```cpp
+int x = static_cast<int>(Day::Monday);  // 1
+```
+
+### Printing Scoped Enums
+
+For the same reason, `cout << d` does not print `"Monday"` or even `1` for a scoped enum. The stream has no default rule for converting `Day::Monday` into output.
+
+To print the integer value:
+
+```cpp
+cout << static_cast<int>(d);  // prints 1
+```
+
+To print the name, write an explicit conversion function as shown in the `to_string` example above.

@@ -107,6 +107,12 @@ export const navigation: NavSection[] = [
         title: "DSA with C++",
         items: [
             { title: "Getting Started", slug: "dsa-cpp/getting-started" },
+            { title: "Types & Structures", slug: "dsa-cpp/types-and-structures" },
+            { title: "Pointers, References & Memory", slug: "dsa-cpp/pointers-references-and-memory" },
+            { title: "Constructors & this", slug: "dsa-cpp/constructors-and-this" },
+            { title: "Operator Overloading", slug: "dsa-cpp/operator-overloading" },
+            { title: "Enumerations", slug: "dsa-cpp/enumerations" },
+            { title: "Modularity & Separate Compilation", slug: "dsa-cpp/modularity-and-separate-compilation" },
             { title: "STL Containers", slug: "dsa-cpp/stl-containers" },
             { title: "Associative Containers", slug: "dsa-cpp/stl-associative" },
             { title: "STL Algorithms", slug: "dsa-cpp/stl-algorithms" },

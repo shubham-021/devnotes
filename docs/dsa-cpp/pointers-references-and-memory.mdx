@@ -1,0 +1,214 @@
+---
+title: Pointers, References and Memory
+description: Member access operators, dynamic arrays, pointer arithmetic, and the relationship between pointers and arrays
+---
+
+## Accessing Members
+
+Given a struct:
+
+```cpp
+struct Vector {
+    int size;
+    double* elem;
+};
+```
+
+How you access members depends on whether you have the object itself, a reference to it, or a pointer to it.
+
+### Through an object or reference: use `.`
+
+```cpp
+Vector v;
+v.size;       // direct access through the object
+
+Vector& r = v;
+r.size;       // a reference is an alias, so it behaves like the object itself
+```
+
+### Through a pointer: use `->`
+
+```cpp
+Vector* p = &v;
+p->size;      // access through a pointer
+```
+
+`p->size` is equivalent to `(*p).size`. The parentheses matter: `*p` first dereferences the pointer to get the object, then `.size` accesses the member.
+
+### Summary
+
+```
+Vector v;       v.size      (I have the object)
+Vector& r = v;  r.size      (I have an alias for the object)
+Vector* p = &v; p->size     (I have a pointer to the object)
+```
+
+The mental model:
+
+- `.` means "I have the object"
+- `->` means "I have a pointer to the object"
+
+---
+
+## Dynamic Arrays
+
+Consider:
+
+```cpp
+double* arr = new double[5];
+```
+
+This does three things:
+
+1. `new double[5]` dynamically allocates space for five `double` values on the heap.
+2. It returns a pointer to the first `double`.
+3. That pointer is stored in `arr`.
+
+If the first element is at address `1000` and `sizeof(double)` is `8`:
+
+```
+arr holds: 1000
+
+1000   [double]
+1008   [double]
+1016   [double]
+1024   [double]
+1032   [double]
+```
+
+`arr` points to the first element. It does not point to the "array as a whole."
+
+---
+
+## Why a Pointer Does Not Know the Array Size
+
+`double*` only says "this is a pointer to a `double`." It encodes nothing about how many elements follow.
+
+That is exactly why a type like `Vector` stores both pieces of information:
+
+```cpp
+struct Vector {
+    int size;       // how many elements
+    double* elem;   // where elements begin
+};
+```
+
+After initialization:
+
+```
+Vector v
+  elem  -->  [double][double][double][double][double]
+  size  =  5
+```
+
+The pointer tells you where. The size tells you how many. Neither alone is sufficient.
+
+---
+
+## Pointer Arithmetic
+
+Given:
+
+```cpp
+double* arr = new double[5];
+```
+
+the expression `arr + 2` does not add two bytes. It advances by two `double`-sized steps.
+
+```
+arr + 2
+= address + (2 * sizeof(double))
+= 1000 + (2 * 8)
+= 1016
+```
+
+C++ performs **typed pointer arithmetic**: the compiler knows the type being pointed to and automatically scales the offset.
+
+Dereferencing:
+
+```cpp
+*(arr + 2)
+```
+
+gets the `double` stored at the computed address.
+
+---
+
+## Array Subscript as Pointer Arithmetic
+
+The subscript operator on a pointer:
+
+```cpp
+arr[i]
+```
+
+is defined as being equivalent to:
+
+```cpp
+*(arr + i)
+```
+
+So when a `Vector` stores `elem` as a `double*` and you write `elem[2]`, the language is doing:
+
+1. Take the address stored in `elem`.
+2. Advance by 2 elements (2 * sizeof(double) bytes).
+3. Dereference to get the value at that address.
+
+You write `arr + 2`, not `arr + 2 * sizeof(double)`. The compiler handles the scaling for you because it knows the type.
+
+---
+
+## Pointer to Element vs Pointer to Array
+
+These are different types and behave differently:
+
+### `double*` -- pointer to a single double
+
+```cpp
+double* arr = new double[5];
+```
+
+`arr + 1` advances by one `double`.
+
+Think of it as: "I point at one `double`, and there might be more after it."
+
+### `double (*)[5]` -- pointer to an entire array of five doubles
+
+```cpp
+double a[5];
+double (*p)[5] = &a;
+```
+
+`p + 1` advances by one entire five-element array (40 bytes if `sizeof(double)` is 8).
+
+In practice, `double*` combined with a separate size is the common pattern. For fixed-size arrays, `std::array<double, 5>` is generally preferable in modern C++, while dynamically sized collections are better represented with `std::vector<double>`.
+
+---
+
+## The Vector Pattern
+
+Putting these pieces together, the textbook `Vector` pattern stores a pointer and a size:
+
+```cpp
+struct Vector {
+    int size;
+    double* elem;
+};
+
+void vec_init(Vector& v, int s) {
+    v.elem = new double[s];
+    v.size = s;
+}
+```
+
+`v.elem = new double[s]` allocates `s` doubles on the heap and stores the address of the first one. `v.size = s` records how many elements exist.
+
+After `vec_init(v, 5)`:
+
+```
+Vector v
+  size = 5
+  elem --> [double][double][double][double][double]
+```
+
+The user of this type can access element `i` using `v.elem[i]`, which the language translates to `*(v.elem + i)`.

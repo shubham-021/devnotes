@@ -1,0 +1,206 @@
+---
+title: Constructors and this
+description: Constructors, member initializer lists, initialization order, and the this pointer
+---
+
+## Constructors
+
+A constructor defines how an object is initialized when it is created. For the `Vector` class:
+
+```cpp
+class Vector {
+public:
+    Vector(int s);
+    double& operator[](int i);
+    int size();
+
+private:
+    int sz;
+    double* elem;
+};
+```
+
+The constructor can be defined as:
+
+```cpp
+Vector::Vector(int s)
+    : elem{new double[s]}, sz{s}
+{
+}
+```
+
+This is a **constructor with a member-initializer list**.
+
+---
+
+## Member Initializer List Syntax
+
+The general form:
+
+```cpp
+ClassName(arguments)
+    : member1{value1},
+      member2{value2}
+{
+    // constructor body
+}
+```
+
+The part after the colon and before the opening brace is the **member initializer list**. It initializes members as part of the object's construction, before the constructor body runs.
+
+For `Vector(int s) : elem{new double[s]}, sz{s} {}`, the sequence is:
+
+1. Constructor receives `s`
+2. `elem` is initialized with `new double[s]`
+3. `sz` is initialized with `s`
+4. Constructor body executes (empty in this case)
+
+When you write `Vector v(5)`:
+
+```
+s = 5
+elem --> dynamically allocated array of 5 doubles
+sz   = 5
+```
+
+---
+
+## Initializer List vs Assignment in the Body
+
+You might be accustomed to:
+
+```cpp
+Person(int age) {
+    this->age = age;
+}
+```
+
+This is **assignment inside the constructor body**. The member is first default-initialized, and then the body overwrites it with a new value.
+
+Compare with:
+
+```cpp
+Person(int age)
+    : age{age}
+{
+}
+```
+
+Here the member is initialized directly with the parameter value. There is no intermediate default-initialization step.
+
+To make the difference concrete, imagine building a house. The assignment approach is: build the room with default walls, then tear them down and rebuild with the walls you actually want. The initializer list approach is: build the room with the correct walls from the start.
+
+---
+
+## When Initializer Lists Are Required
+
+Some members cannot be assigned in the body because they must be initialized at the point of construction.
+
+### const members
+
+```cpp
+class A {
+    const int x;
+
+public:
+    A(int n) : x{n} {}
+};
+```
+
+You cannot write:
+
+```cpp
+A(int n) {
+    x = n;  // error: x is const, cannot be assigned
+}
+```
+
+A `const` member can only receive its value once, at initialization.
+
+### Reference members
+
+```cpp
+class A {
+    int& ref;
+
+public:
+    A(int& x) : ref{x} {}
+};
+```
+
+A reference must be bound to something at the moment it is created. There is no such thing as an unbound reference that gets assigned later.
+
+The initializer list is therefore not merely an alternate syntax for assignment. It is part of the object's construction process.
+
+---
+
+## Initialization Order
+
+Members are initialized in the order they are **declared in the class**, regardless of the order written in the initializer list.
+
+```cpp
+class A {
+    int x;
+    int y;
+
+public:
+    A() : y{10}, x{20} {}
+};
+```
+
+Despite `y` appearing first in the initializer list, `x` is initialized first because it is declared first in the class body.
+
+Best practice: write the initializer list in the same order as the member declarations, to avoid confusion between what you wrote and what actually happens.
+
+---
+
+## The this Pointer
+
+Inside a non-static member function, `this` is a pointer to the current object.
+
+```cpp
+class Person {
+    int age;
+
+public:
+    Person(int age) {
+        this->age = age;
+    }
+};
+```
+
+When you create an object:
+
+```cpp
+Person p(22);
+```
+
+During the constructor's execution, `this` points to `p`. So `this->age` accesses the `age` member of `p`.
+
+Since `this` is a pointer, `this->age` is equivalent to `(*this).age`. This follows the same rule as any other pointer: `->` for pointers, `.` for objects.
+
+---
+
+## Why this Is Commonly Used
+
+In the constructor above, there are two things called `age`: the member variable and the constructor parameter. The `this->` prefix disambiguates them:
+
+```cpp
+Person(int age) {
+    this->age = age;
+    //   ^        ^
+    //   member   parameter
+}
+```
+
+With an initializer list, the compiler can resolve this without `this`:
+
+```cpp
+Person(int age) : age{age} {}
+//                ^    ^
+//              member parameter
+```
+
+The first `age` is understood as the member being initialized. The second is the constructor parameter providing the value.
+
+The core idea: `this` is a pointer to the object whose member function is currently executing. It is always available inside non-static member functions, whether you use it explicitly or not.

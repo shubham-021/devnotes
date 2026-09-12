@@ -1,0 +1,148 @@
+---
+title: Operator Overloading
+description: Defining custom operator behavior with operator[], return by reference, and pre/post increment
+---
+
+## Why Overload Operators
+
+The subscript operator `[]` naturally works with built-in arrays:
+
+```cpp
+double arr[5];
+arr[2] = 10.0;
+```
+
+But `Vector` is a user-defined type, not a built-in array. Without operator overloading, there would be no way to write `v[2]` for a `Vector`. You would have to call a function like `v.get(2)` instead.
+
+Operator overloading lets a class define what happens when standard operators are used with its instances.
+
+---
+
+## Defining operator[]
+
+For the `Vector` class:
+
+```cpp
+class Vector {
+public:
+    Vector(int s);
+    double& operator[](int i);
+    int size();
+
+private:
+    int sz;
+    double* elem;
+};
+```
+
+The implementation:
+
+```cpp
+double& Vector::operator[](int i) {
+    return elem[i];
+}
+```
+
+This tells C++: when someone writes `v[i]` for a `Vector`, call this function.
+
+So `v[2]` is conceptually translated to:
+
+```cpp
+v.operator[](2)
+```
+
+which executes `return elem[2]`, which itself is `*(elem + 2)` through pointer arithmetic.
+
+---
+
+## Why Return double& Instead of double
+
+If the return type were `double`:
+
+```cpp
+double operator[](int i) {
+    return elem[i];
+}
+```
+
+The caller would receive a **copy** of the element. Modifying that copy would not affect the actual array:
+
+```cpp
+v[2] = 100;  // this would modify a temporary copy, not the actual element
+```
+
+By returning `double&`:
+
+```cpp
+double& operator[](int i) {
+    return elem[i];
+}
+```
+
+The caller receives a **reference to the actual element** in the underlying array. Now:
+
+```cpp
+v[2] = 100;
+```
+
+modifies the real element because `v[2]` is an alias for `elem[2]`.
+
+Think of it this way: returning `double` is like giving someone a photocopy of a document. Writing on the photocopy does not change the original. Returning `double&` is like giving them direct access to the original document.
+
+```
+double  --> returns a value (copy)
+double& --> returns a reference to the actual object
+```
+
+---
+
+## Pre-Increment vs Post-Increment
+
+This distinction appears frequently in loops and expressions. Both `++i` and `i++` increment the variable, but they differ in the value the expression produces.
+
+### ++i (pre-increment)
+
+Increment first, then produce the new value.
+
+```cpp
+int i = 5;
+int x = ++i;
+// i is now 6
+// x is 6
+```
+
+### i++ (post-increment)
+
+Produce the current value first, then increment.
+
+```cpp
+int i = 5;
+int x = i++;
+// i is now 6
+// x is 5
+```
+
+The way to remember: the `++` on the left means "increment comes first." The `++` on the right means "increment comes after."
+
+### When It Matters
+
+The distinction matters when the resulting value is used:
+
+```cpp
+cout << i++;  // prints old value, then increments
+cout << ++i;  // increments, then prints new value
+```
+
+In a standalone loop:
+
+```cpp
+for (int i = 0; i < 10; i++)
+```
+
+vs:
+
+```cpp
+for (int i = 0; i < 10; ++i)
+```
+
+The value produced by the increment expression is discarded (not assigned to anything), so both have the same observable result for built-in types like `int`.
