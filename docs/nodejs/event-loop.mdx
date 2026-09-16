@@ -1,0 +1,384 @@
+---
+title: Event Loop
+description: How JavaScript executes code using the call stack, how the runtime schedules asynchronous callbacks through the task queue and microtask queue, and the precise rules that determine execution order
+---
+
+## The Call Stack
+
+Every JavaScript runtime has a single call stack. The call stack is a data structure that tracks which function is currently executing and which functions called it.
+
+When a function is called, a new **frame** is pushed onto the stack. That frame holds the function's local variables, arguments, and the point in the code to return to when the function finishes. When the function returns, its frame is popped off the stack.
+
+```javascript
+function multiply(a, b) {
+    return a * b;
+}
+
+function square(n) {
+    return multiply(n, n);
+}
+
+const result = square(5);
+```
+
+The call stack progresses as follows:
+
+1. `square(5)` is called. A frame for `square` is pushed.
+2. Inside `square`, `multiply(5, 5)` is called. A frame for `multiply` is pushed on top.
+3. `multiply` returns `25`. Its frame is popped.
+4. `square` returns `25`. Its frame is popped.
+5. The stack is empty.
+
+At step 2, the stack looks like:
+
+```
+| multiply(5, 5) |   <-- top (currently executing)
+| square(5)      |
+| (global)       |   <-- bottom
+```
+
+The function at the top of the stack is always the one currently executing. JavaScript can only do one thing at a time because there is only one call stack.
+
+### Stack Overflow
+
+If a function calls itself recursively without a base case, frames keep being pushed without ever being popped:
+
+```javascript
+function recurse() {
+    recurse();
+}
+
+recurse(); // RangeError: Maximum call stack size exceeded
+```
+
+The stack has a finite size (typically a few thousand to tens of thousands of frames depending on the engine). When it overflows, the runtime throws an error.
+
+---
+
+## Run-to-Completion
+
+JavaScript follows a **run-to-completion** model. Once a function starts executing, it runs until it returns. No other JavaScript code can interrupt it mid-execution on the same thread.
+
+```javascript
+function doWork() {
+    console.log("start");
+    for (let i = 0; i < 1_000_000; i++) {}
+    console.log("end");
+}
+
+doWork();
+```
+
+Between `"start"` and `"end"`, nothing else can run on this thread. No event handlers, no callbacks, no rendering. The function owns the thread until it finishes.
+
+This is fundamentally different from multi-threaded languages where another thread could preempt your code at any point.
+
+---
+
+## The Problem: Blocking
+
+If JavaScript can only run one function at a time, and each function runs to completion, how does anything asynchronous happen? Consider:
+
+```javascript
+const response = httpGetSync("https://api.example.com/users"); // 2 seconds
+console.log(response);
+console.log("done");
+```
+
+If `httpGetSync` actually blocked the thread for 2 seconds (like a synchronous HTTP call), the entire program freezes. In a browser, the UI cannot respond to clicks, scrolling, or typing. In Node.js, no other request can be processed.
+
+This is why JavaScript does not have synchronous network I/O. Instead, it uses an asynchronous model where I/O operations are delegated to the runtime and results are delivered later through callbacks.
+
+---
+
+## The Event Loop
+
+The event loop is the mechanism that coordinates between the call stack and the queues of pending work. Its job is simple but critical:
+
+1. If the call stack is empty, check the microtask queue.
+2. If the microtask queue has tasks, run **all** of them until the microtask queue is empty.
+3. Then take the next task from the task queue (macrotask queue) and push it onto the call stack.
+4. Repeat.
+
+The event loop never pushes a new task onto the stack while something is already executing. It waits for the stack to be empty first. This is what enforces run-to-completion.
+
+---
+
+## Runtime APIs
+
+The JavaScript language itself has no built-in mechanism for timers, network requests, or file I/O. These are provided by the **runtime environment** -- the browser or Node.js.
+
+When you call `setTimeout`, `fetch`, `addEventListener`, or `fs.readFile`, you are calling a runtime API, not a JavaScript language feature. The runtime handles the operation using its own resources (OS threads, kernel async I/O, hardware timers) and places a callback onto the appropriate queue when the operation completes.
+
+```javascript
+console.log("A");
+
+setTimeout(() => {
+    console.log("B");
+}, 0);
+
+console.log("C");
+```
+
+Here is what happens step by step:
+
+**Step 1.** `console.log("A")` is pushed onto the call stack and executes. Output: `A`. The frame is popped.
+
+**Step 2.** `setTimeout(callback, 0)` is called. The runtime registers the callback with a timer of 0 milliseconds. The `setTimeout` call itself returns immediately and its frame is popped. The callback is **not** placed on the call stack. It is handed off to the runtime.
+
+**Step 3.** `console.log("C")` executes. Output: `A`, `C`.
+
+**Step 4.** The call stack is now empty. The event loop checks the microtask queue (empty). Then it checks the task queue. The timer has elapsed (0ms), so the runtime has placed the callback in the task queue. The event loop takes it and pushes it onto the call stack.
+
+**Step 5.** The callback executes `console.log("B")`. Output: `A`, `C`, `B`.
+
+Even though the timeout is 0 milliseconds, `"B"` prints last. The timer callback cannot run until the current synchronous code finishes and the call stack is empty.
+
+---
+
+## The Task Queue (Macrotask Queue)
+
+The task queue holds callbacks from:
+
+- `setTimeout` and `setInterval`
+- I/O completion callbacks (Node.js)
+- `setImmediate` (Node.js)
+- UI events like `click`, `keydown` (browser)
+- `MessageChannel` ports
+
+Each iteration of the event loop processes **one** task from this queue. After that task finishes and the call stack is empty, the event loop drains the microtask queue completely, then may render (in a browser), and then picks up the next macrotask.
+
+```javascript
+setTimeout(() => console.log("timeout 1"), 0);
+setTimeout(() => console.log("timeout 2"), 0);
+setTimeout(() => console.log("timeout 3"), 0);
+```
+
+These three callbacks are placed in the task queue in order. The event loop processes them one at a time:
+
+1. Pick `timeout 1` from queue, execute it, stack empty.
+2. Check microtask queue (empty). Potentially render.
+3. Pick `timeout 2` from queue, execute it, stack empty.
+4. Check microtask queue (empty). Potentially render.
+5. Pick `timeout 3` from queue, execute it, stack empty.
+
+---
+
+## The Microtask Queue
+
+The microtask queue is a separate, higher-priority queue. Microtasks are created by:
+
+- Promise `.then()`, `.catch()`, `.finally()` callbacks
+- `await` continuations (the code after `await` in an async function)
+- `queueMicrotask()`
+- `MutationObserver` callbacks (browser)
+
+The critical rule: **the microtask queue is drained completely before the event loop moves on to the next macrotask.** If a microtask enqueues another microtask, that new microtask also runs before any macrotask gets a turn.
+
+```javascript
+setTimeout(() => console.log("timeout"), 0);
+
+Promise.resolve().then(() => console.log("promise"));
+
+console.log("sync");
+```
+
+**Step 1.** `setTimeout` registers its callback with the runtime. Frame popped.
+
+**Step 2.** `Promise.resolve()` creates an already-resolved Promise. `.then(callback)` schedules the callback as a microtask. Frame popped.
+
+**Step 3.** `console.log("sync")` executes. Output: `sync`.
+
+**Step 4.** Call stack is empty. The event loop checks the microtask queue. The Promise callback is there. It executes. Output: `sync`, `promise`.
+
+**Step 5.** Microtask queue is now empty. The event loop checks the task queue. The setTimeout callback is there. It executes. Output: `sync`, `promise`, `timeout`.
+
+Microtasks always run before the next macrotask, regardless of which was registered first.
+
+---
+
+## Detailed Tracing: Mixed Queues
+
+This example combines synchronous code, macrotasks, and microtasks:
+
+```javascript
+console.log("1");
+
+setTimeout(() => {
+    console.log("2");
+    Promise.resolve().then(() => console.log("3"));
+}, 0);
+
+Promise.resolve().then(() => {
+    console.log("4");
+    setTimeout(() => console.log("5"), 0);
+});
+
+console.log("6");
+```
+
+Let's trace execution:
+
+**Synchronous phase** (call stack processing the script):
+- `console.log("1")` -- Output: `1`
+- `setTimeout(cb1, 0)` -- cb1 registered with runtime, will go to task queue
+- `Promise.resolve().then(cb2)` -- cb2 goes to microtask queue
+- `console.log("6")` -- Output: `1`, `6`
+
+**Call stack is empty. Drain microtask queue:**
+- Execute cb2: `console.log("4")` -- Output: `1`, `6`, `4`
+- Inside cb2: `setTimeout(cb3, 0)` -- cb3 registered, will go to task queue
+- Microtask queue is now empty.
+
+**Next macrotask from task queue:**
+- Execute cb1: `console.log("2")` -- Output: `1`, `6`, `4`, `2`
+- Inside cb1: `Promise.resolve().then(cb4)` -- cb4 goes to microtask queue
+- cb1 finishes. Call stack empty.
+
+**Drain microtask queue:**
+- Execute cb4: `console.log("3")` -- Output: `1`, `6`, `4`, `2`, `3`
+- Microtask queue is now empty.
+
+**Next macrotask from task queue:**
+- Execute cb3: `console.log("5")` -- Output: `1`, `6`, `4`, `2`, `3`, `5`
+
+Final output: `1`, `6`, `4`, `2`, `3`, `5`.
+
+---
+
+## Microtask Starvation
+
+Because the microtask queue drains completely before any macrotask runs, it is possible to starve the macrotask queue (and in browsers, starve rendering) by continuously enqueuing microtasks:
+
+```javascript
+function endlessMicrotask() {
+    Promise.resolve().then(() => endlessMicrotask());
+}
+
+endlessMicrotask();
+// setTimeout callbacks will NEVER run
+// The browser will NEVER render
+// The page is effectively frozen
+```
+
+Each microtask schedules another microtask. The queue never empties. The event loop never gets past the "drain microtasks" step. This is functionally the same as an infinite synchronous loop -- the thread is occupied forever.
+
+This is not a concern in normal code, but it explains why unbounded microtask generation is dangerous.
+
+---
+
+## Tracing async/await Through the Event Loop
+
+`async/await` is syntactic sugar over Promises, so `await` continuations are microtasks. Here is how the event loop processes them:
+
+```javascript
+async function first() {
+    console.log("A");
+    await second();
+    console.log("B");
+}
+
+async function second() {
+    console.log("C");
+}
+
+first();
+console.log("D");
+```
+
+**Step 1.** `first()` is called. It executes synchronously until the first `await`.
+- `console.log("A")` -- Output: `A`
+- `await second()` is reached. `second()` is called.
+
+**Step 2.** Inside `second()`:
+- `console.log("C")` -- Output: `A`, `C`
+- `second()` returns (implicitly returns a resolved Promise).
+
+**Step 3.** `await` sees a resolved Promise. It does not resume `first()` immediately. It schedules the continuation (everything after `await second()`) as a microtask. The `first()` function is suspended. Control returns to the caller.
+
+**Step 4.** `console.log("D")` -- Output: `A`, `C`, `D`.
+
+**Step 5.** Call stack is empty. Event loop drains microtask queue. The continuation of `first()` runs.
+- `console.log("B")` -- Output: `A`, `C`, `D`, `B`.
+
+Even though the awaited Promise was already resolved, the continuation still goes through the microtask queue. This guarantees consistent ordering: code after an `await` always runs asynchronously, never inline.
+
+---
+
+## Tracing: setTimeout vs Promise vs await
+
+```javascript
+async function run() {
+    console.log("1");
+
+    setTimeout(() => console.log("2"), 0);
+
+    await Promise.resolve();
+    console.log("3");
+
+    Promise.resolve().then(() => console.log("4"));
+
+    setTimeout(() => console.log("5"), 0);
+}
+
+run();
+console.log("6");
+```
+
+**Synchronous phase:**
+- `run()` is called. `console.log("1")` -- Output: `1`
+- `setTimeout(cb1, 0)` -- cb1 to task queue
+- `await Promise.resolve()` -- Promise is resolved, but the continuation of `run()` (everything after this line) is scheduled as a microtask. `run()` suspends.
+- Back in the caller: `console.log("6")` -- Output: `1`, `6`
+
+**Drain microtask queue:**
+- Continuation of `run()` resumes.
+- `console.log("3")` -- Output: `1`, `6`, `3`
+- `Promise.resolve().then(cb2)` -- cb2 to microtask queue
+- `setTimeout(cb3, 0)` -- cb3 to task queue
+- `run()` finishes. Stack empty.
+- Microtask queue still has cb2. Execute it: `console.log("4")` -- Output: `1`, `6`, `3`, `4`
+- Microtask queue empty.
+
+**Macrotask queue:**
+- cb1: `console.log("2")` -- Output: `1`, `6`, `3`, `4`, `2`
+- cb3: `console.log("5")` -- Output: `1`, `6`, `3`, `4`, `2`, `5`
+
+Final output: `1`, `6`, `3`, `4`, `2`, `5`.
+
+---
+
+## The Full Picture
+
+Putting all the components together:
+
+```
+Your Code
+    |
+    v
+[Call Stack]  <-- currently executing function(s)
+    |
+    | (when stack is empty)
+    v
+[Microtask Queue]  <-- Promise callbacks, await continuations, queueMicrotask
+    |
+    | (when microtask queue is empty)
+    v
+[Task Queue]  <-- setTimeout, setInterval, I/O callbacks, UI events
+    |
+    | (one task executed)
+    |
+    +---> back to draining microtask queue
+```
+
+The rules, in summary:
+
+1. Synchronous code runs to completion. Nothing interrupts it.
+2. When the call stack empties, drain the entire microtask queue.
+3. If microtasks enqueue more microtasks, those run too before moving on.
+4. Take one task from the macrotask queue and execute it.
+5. After that task completes, drain the microtask queue again.
+6. In browsers, rendering may happen between macrotasks (typically targeting 60fps).
+7. Repeat forever.
+
+This is the engine behind everything: async/await, Promises, setTimeout, event handlers, I/O callbacks, and the entire concurrency model of JavaScript.

@@ -166,6 +166,7 @@ export const navigation: NavSection[] = [
             { title: "File System", slug: "nodejs/file-system" },
             { title: "Paths", slug: "nodejs/paths" },
             { title: "CLI Tools", slug: "nodejs/cli-tools" },
+            { title: "Event Loop", slug: "nodejs/event-loop" },
             { title: "Concurrency Model", slug: "nodejs/concurrency-model" },
             { title: "Server Request Lifecycle", slug: "nodejs/server-request-lifecycle" },
             { title: "Async/Await", slug: "nodejs/async-await" },
