@@ -1,0 +1,208 @@
+---
+title: Server Request Lifecycle
+description: How an HTTP request travels from client to server, how the OS delivers it to your process, and how single-threaded and multi-threaded servers handle concurrent requests
+---
+
+## The Server Process
+
+When you run a Node.js server:
+
+```javascript
+app.listen(3000);
+```
+
+the OS creates a process. Inside that process, Node sets up a listening socket bound to port 3000. The OS now knows that any TCP traffic arriving at port 3000 should be delivered to this process.
+
+At this point, the server is idle, waiting for connections.
+
+---
+
+## From Client to Server
+
+When a browser sends a request like `GET /users`, the data travels through the network and arrives at the server machine's network interface. The OS examines the TCP packet, sees the destination port is 3000, and delivers the connection to the Node process.
+
+Node accepts the connection. Now there is a live TCP connection between the client and the server.
+
+### Connections Are Not Requests
+
+A TCP connection is a persistent channel between two machines. An HTTP request is a message sent over that channel. A single TCP connection can carry many HTTP requests:
+
+```
+TCP connection
+  |
+  |-- HTTP request 1  (GET /users)
+  |-- HTTP request 2  (GET /products)
+  |-- HTTP request 3  (POST /orders)
+```
+
+With HTTP/1.1 keep-alive, the connection stays open after a response is sent, allowing subsequent requests to reuse it. With HTTP/2, multiple requests can even be sent simultaneously over the same connection (multiplexing).
+
+---
+
+## Request Handling
+
+Once the server receives an HTTP request, the runtime parses the raw TCP data into structured objects. In Express, these become `req` and `res`:
+
+```javascript
+app.get("/users", async (req, res) => {
+    const users = await db.query("SELECT * FROM users");
+    res.json(users);
+});
+```
+
+Express matches the request path and method against registered routes, then invokes the matching handler.
+
+---
+
+## Single-Threaded Event Loop Architecture
+
+Node.js uses a single JavaScript thread combined with an event loop. Here is how three concurrent requests are handled:
+
+**Request A arrives.** The handler starts executing. It calls `db.query()`, which initiates an asynchronous database operation. The `await` suspends the handler function and returns control to the event loop. The JavaScript thread is now free.
+
+**Request B arrives.** The same thread executes B's handler. It also calls `db.query()` and suspends.
+
+**Request C arrives.** Same thing. It starts, issues a DB query, and suspends.
+
+Now there are three database operations in flight. The JavaScript thread is idle, waiting for any of them to complete.
+
+**Database responds to A.** The event loop schedules A's continuation. The thread resumes A's handler, which calls `res.json(users)` and sends the response.
+
+**Database responds to B and C.** They resume in turn.
+
+The key insight: only one piece of JavaScript executes at any given instant, but multiple I/O operations can be pending simultaneously. The thread is never blocked waiting for I/O. It always moves on to the next available task.
+
+### Where This Architecture Struggles
+
+If any handler performs CPU-intensive work instead of I/O, it blocks the entire thread:
+
+```javascript
+app.get("/report", (req, res) => {
+    // This loop runs for seconds, blocking EVERY other request
+    for (let i = 0; i < 10_000_000_000; i++) { /* ... */ }
+    res.send("done");
+});
+```
+
+While this loop runs, requests B and C cannot even begin processing. The event loop is stuck.
+
+### What Happens on the Database Side
+
+When the handler calls `await db.query()`, Node.js sends the SQL statement over a TCP connection to the database server. The database is itself a concurrent program -- it has its own threads or processes handling queries from many clients simultaneously. While Node.js is free to process other requests, the database is actively working on the query: parsing SQL, planning execution, acquiring locks on the relevant rows, reading data from disk or its buffer cache, and sending results back.
+
+The database connection used for the query is typically borrowed from a connection pool. If your Node.js server maintains a pool of 20 connections and all 20 are occupied by pending queries, the 21st request will wait for a connection to become available before its query can even be sent to the database.
+
+---
+
+## Multi-Threaded Architecture
+
+Servers like those built with Java (Spring), Go, or C# typically use multiple threads. When a request arrives, it is assigned to a thread from a pool:
+
+```
+Request A --> Thread 1
+Request B --> Thread 2
+Request C --> Thread 3
+```
+
+If the server has multiple CPU cores, these threads can execute truly in parallel:
+
+```
+Core 1: Thread 1 handling Request A
+Core 2: Thread 2 handling Request B
+Core 3: Thread 3 handling Request C
+```
+
+This is real parallelism. CPU-bound work in Request A does not block Request B because they run on different threads.
+
+### Single Core with Multiple Threads
+
+Even with only one CPU core, multiple threads can still provide concurrency. The OS scheduler rapidly switches between threads (time-slicing), giving each one a small window of CPU time:
+
+```
+CPU: T1 -> T2 -> T3 -> T1 -> T2 -> T3 -> ...
+```
+
+No two threads execute at the exact same instant on one core, but the rapid switching creates the appearance of simultaneous execution.
+
+---
+
+## Thread Pools
+
+Production multi-threaded servers rarely create a new thread for every request. Thread creation is expensive (memory allocation, OS bookkeeping). Instead, a fixed pool of threads is created at startup, and incoming requests are queued:
+
+```javascript
+// Conceptual: Java-style thread pool
+ThreadPool pool = new ThreadPool(4);
+
+// Incoming requests are assigned to available threads
+// If all 4 threads are busy, new requests wait in the queue
+```
+
+When a thread finishes handling a request, it picks up the next one from the queue. Threads are reused across many requests over the lifetime of the server.
+
+---
+
+## Multiple Processes
+
+For single-threaded runtimes like Node.js, the standard way to utilize multiple CPU cores is to run multiple processes. Node's built-in `cluster` module does exactly this:
+
+```javascript
+import cluster from "cluster";
+import os from "os";
+
+if (cluster.isPrimary) {
+    const cpuCount = os.cpus().length;
+    for (let i = 0; i < cpuCount; i++) {
+        cluster.fork();
+    }
+} else {
+    app.listen(3000);
+}
+```
+
+This spawns one worker process per CPU core. Each worker has its own event loop and its own JavaScript thread. The OS distributes incoming connections across the workers.
+
+Production Node.js deployments almost always use this pattern, either directly via `cluster` or through process managers like PM2.
+
+---
+
+## Comparing the Two Architectures
+
+| | Single-Threaded Event Loop | Multi-Threaded |
+|---|---|---|
+| Best for | I/O-heavy workloads (APIs, proxies, real-time) | CPU-heavy workloads (image processing, computation) |
+| Concurrent I/O | Excellent (thousands of pending operations) | Good (but each thread is blocked during I/O unless async) |
+| CPU-bound work | Blocks the thread, starves other requests | Each thread handles its own, no starvation |
+| Memory per connection | Very low (no thread per connection) | Higher (each thread has its own stack, typically 1-8 MB) |
+| Complexity | No locks or race conditions in JS code | Must handle shared state, locks, deadlocks |
+| Scaling approach | Multiple processes | More threads, or multiple processes |
+
+Neither architecture is universally better. The choice depends on the workload. Many production systems combine both: a Node.js API layer for I/O-heavy routing and a Go or Java service for CPU-heavy processing.
+
+---
+
+## The Correct Mental Model
+
+A common mistake is thinking of each request as a separate running program. That is not what happens.
+
+A server is a long-running program. It starts once, sets up its listening socket, and then processes requests as they arrive. Each request is a unit of work given to the already-running server, not a new copy of the program.
+
+```
+Program
+  |
+  +-- Process (started once, runs continuously)
+        |
+        +-- Thread(s)
+        |     |
+        |     +-- execute handler code
+        |
+        +-- Memory (shared across all requests in this process)
+```
+
+And separately, the request flow:
+
+```
+Client --> Connection --> HTTP Request --> Server --> handler --> Response
+```
+
+A request is work. The server is the worker. The server does not spawn a new copy of itself for each request.

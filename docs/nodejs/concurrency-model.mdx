@@ -1,0 +1,156 @@
+---
+title: Concurrency Model
+description: How JavaScript achieves concurrency with a single main thread, how the runtime provides additional OS threads, and where Web Workers fit in
+---
+
+## The Single-Threaded Claim
+
+When people say "JavaScript is single-threaded", what they mean is:
+
+**Your JavaScript code executes on a single main thread.**
+
+This does **not** mean the entire browser or Node.js process contains only one OS thread. That distinction is the source of almost every misconception about JavaScript and concurrency.
+
+A statement like `console.log("A")` followed by `console.log("B")` will always execute sequentially on the same thread. There is no second JS thread simultaneously executing `B` while the first thread executes `A`. Every line of your JavaScript shares one execution context, one call stack, and one thread of control.
+
+---
+
+## The Runtime Has Many Threads
+
+A browser is not just a JavaScript interpreter. It is a large, multi-threaded application that happens to include a JavaScript engine as one of its components.
+
+A typical browser process contains:
+
+- **Main JS thread** -- where your JavaScript executes
+- **Network threads** -- handle downloading resources, making HTTP requests
+- **Rendering/compositor threads** -- paint pixels, handle layout, compositing
+- **Other internal threads** -- garbage collection, audio decoding, GPU communication
+
+Node.js is similar. The Node.js process includes:
+
+- **Main JS thread** -- your application code
+- **libuv thread pool** -- handles file system operations, DNS lookups, compression
+- **OS-level async I/O** -- network operations use the OS kernel's async facilities directly (epoll, kqueue, IOCP)
+
+### What This Means in Practice
+
+When you call `fetch("/users")` in the browser or `fs.readFile("data.txt")` in Node.js, the JavaScript thread does not perform the I/O itself. It delegates the work to the runtime, which uses its own threads or OS-level asynchronous primitives to perform the operation. When the operation completes, the result is placed on a queue, and the event loop picks it up and delivers it back to your JavaScript code.
+
+```javascript
+fetch("/users");
+console.log("hello");
+```
+
+Here, the JS thread calls `fetch()`, which tells the browser's networking subsystem to start an HTTP request. The JS thread immediately moves on to `console.log("hello")`. Later, when the network response arrives, a callback (or Promise continuation) is queued for the event loop to execute on the JS thread.
+
+This is the fundamental reason JavaScript can handle large amounts of I/O without creating a new JS thread for every operation.
+
+---
+
+## Concurrency vs Parallelism
+
+These two terms are often confused, but they describe different things.
+
+**Concurrency** means multiple tasks are in progress during the same time period. They may not be executing at the exact same instant, but their lifetimes overlap. A single-threaded event loop achieves concurrency by interleaving work: while one task waits for I/O, another task uses the CPU.
+
+**Parallelism** means multiple tasks are executing at the exact same instant, typically on different CPU cores. This requires multiple threads or processes.
+
+JavaScript's event loop provides concurrency. If you need parallelism for CPU-heavy work, you need Web Workers (browser) or Worker Threads (Node.js).
+
+| | Concurrency | Parallelism |
+|---|---|---|
+| Definition | Tasks overlap in time | Tasks execute simultaneously |
+| Requires multiple threads | No | Yes |
+| Single-core capable | Yes (via interleaving) | No |
+| JS event loop | Yes | No |
+| Web Workers | Yes | Yes (if multiple cores) |
+
+---
+
+## Web Workers
+
+Web Workers are the mechanism for creating additional JavaScript execution threads. Each Worker runs in its own isolated thread with its own global scope. It does not share memory or variables with the main thread.
+
+```javascript
+// main.js
+const worker = new Worker("worker.js");
+worker.postMessage("start calculation");
+
+worker.onmessage = (event) => {
+    console.log("Result:", event.data);
+};
+```
+
+```javascript
+// worker.js
+onmessage = (event) => {
+    const result = expensiveCalculation();
+    postMessage(result);
+};
+```
+
+Communication between the main thread and a Worker happens exclusively through message passing using `postMessage` and the `onmessage` event handler. Data sent between threads is serialized (copied), not shared.
+
+### Why Workers Exist
+
+Without a Worker, CPU-intensive computation on the main thread blocks everything else:
+
+```javascript
+// This blocks the main thread for the entire duration
+function computePrimes(limit) {
+    const primes = [];
+    for (let i = 2; i <= limit; i++) {
+        let isPrime = true;
+        for (let j = 2; j <= Math.sqrt(i); j++) {
+            if (i % j === 0) { isPrime = false; break; }
+        }
+        if (isPrime) primes.push(i);
+    }
+    return primes;
+}
+
+computePrimes(10_000_000);
+// UI is frozen, no events are processed, no rendering happens
+```
+
+With a Worker, the expensive computation runs on a separate OS thread. The main thread remains free to handle UI events, render frames, and process other callbacks.
+
+### Node.js Worker Threads
+
+Node.js has an equivalent called `worker_threads`:
+
+```javascript
+import { Worker, isMainThread, parentPort } from "worker_threads";
+
+if (isMainThread) {
+    const worker = new Worker(new URL(import.meta.url));
+    worker.on("message", (result) => {
+        console.log("Result:", result);
+    });
+    worker.postMessage("start");
+} else {
+    parentPort.on("message", () => {
+        const result = expensiveCalculation();
+        parentPort.postMessage(result);
+    });
+}
+```
+
+Unlike browser Web Workers, Node.js Worker Threads can optionally share memory using `SharedArrayBuffer`, which enables more efficient data transfer for specific use cases.
+
+---
+
+## When to Use What
+
+The event loop handles I/O-bound concurrency automatically. You do not need Workers for network requests, database queries, or file system operations. The runtime already delegates these to non-JS threads or OS async primitives.
+
+Workers are for CPU-bound parallelism: image processing, cryptographic operations, data parsing, mathematical computation, or any task that would occupy the main thread for a noticeable duration.
+
+| Workload Type | Use Event Loop | Use Workers |
+|---|---|---|
+| HTTP requests | Yes | No |
+| Database queries | Yes | No |
+| File reads/writes | Yes | No |
+| Image processing | No | Yes |
+| Heavy computation | No | Yes |
+| Data compression | Depends (Node has async zlib) | For custom algorithms |

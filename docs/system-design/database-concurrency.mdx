@@ -1,0 +1,306 @@
+---
+title: Database Concurrency
+description: How a database server handles multiple simultaneous queries, the connection and process models used by real databases, connection pooling, and the fundamentals of concurrency control and locking
+---
+
+## Prerequisites
+
+Before reading this, you should understand what a process and a thread are at the OS level, and the difference between concurrency (tasks overlapping in time) and parallelism (tasks executing at the exact same instant on different CPU cores). You should also understand the client-server model: your backend application is a client to the database, just as a browser is a client to your backend.
+
+---
+
+## A Database Is a Server Program
+
+This is the first thing to internalize. A database like PostgreSQL, MySQL, or MongoDB is not a magical storage box. It is a regular program -- a long-running server process that listens on a network port, accepts connections from clients, and processes queries.
+
+When you install PostgreSQL and start it, the OS creates a process. That process binds to a port (5432 by default) and waits for incoming TCP connections. This is fundamentally the same pattern as a Node.js server calling `app.listen(3000)`.
+
+```
+Operating System
+  |
+  +-- PostgreSQL process (listening on port 5432)
+  |
+  +-- Your Node.js server (listening on port 3000)
+  |
+  +-- Other programs...
+```
+
+When your Node.js code calls `db.query("SELECT * FROM users")`, it is sending a message over a TCP connection to the PostgreSQL process. PostgreSQL parses the SQL, executes the query against its data files, and sends the result back over the same connection.
+
+The important consequence: your database server is a concurrent system. Multiple clients connect to it simultaneously, and it must handle their queries without corrupting data or producing wrong results.
+
+---
+
+## Connections and Queries
+
+When your application connects to a database, it establishes a persistent TCP connection. This connection stays open for many queries over its lifetime.
+
+```
+Node.js app                       PostgreSQL
+    |                                 |
+    |---- TCP connection established--|
+    |                                 |
+    |---- SELECT * FROM users ------->|
+    |<--- [result rows] -------------|
+    |                                 |
+    |---- INSERT INTO orders ... ---->|
+    |<--- [insert confirmation] ------|
+    |                                 |
+    |---- SELECT * FROM products ---->|
+    |<--- [result rows] -------------|
+    |                                 |
+```
+
+A single connection handles many queries sequentially. The client sends a query, waits for the result, then sends the next query. On one connection, queries execute one at a time.
+
+But multiple connections can exist simultaneously. If your Node.js server has 10 open connections to PostgreSQL, 10 queries can be in-flight at the same time, each on its own connection.
+
+```
+Connection 1: SELECT * FROM users
+Connection 2: SELECT * FROM orders WHERE user_id = 5
+Connection 3: INSERT INTO users (name) VALUES ('Alice')
+Connection 4: UPDATE accounts SET balance = 100 WHERE id = 3
+```
+
+This is the basis of database concurrency.
+
+---
+
+## How Databases Handle Multiple Connections
+
+Different databases use different models for serving concurrent connections.
+
+### Process-Per-Connection (PostgreSQL)
+
+When a new client connects to PostgreSQL, the main PostgreSQL process (called the **postmaster**) forks a new child process dedicated to that connection. This child process handles all queries sent over that connection for its entire lifetime.
+
+```
+PostgreSQL postmaster (PID 1000)
+  |
+  +-- Backend process (PID 1001) <--- Connection from Node.js app
+  +-- Backend process (PID 1002) <--- Connection from admin tool
+  +-- Backend process (PID 1003) <--- Connection from another service
+```
+
+Each backend process has its own memory space. This provides strong isolation: a crash in one backend process does not take down the others. However, process creation is relatively expensive (the OS must allocate memory, copy page tables, create a new scheduling entity), which is one reason connection pooling matters.
+
+### Thread-Per-Connection (MySQL)
+
+MySQL uses a different model. Instead of forking a new OS process, MySQL creates a new thread within its single process for each client connection.
+
+```
+MySQL process (PID 2000)
+  |
+  +-- Thread 1 <--- Connection from Node.js app
+  +-- Thread 2 <--- Connection from admin tool
+  +-- Thread 3 <--- Connection from another service
+```
+
+Threads are lighter weight than processes (they share the same memory space), so creating a new thread per connection is cheaper than forking a process. The tradeoff is that threads share memory, which means a bug in one thread can potentially corrupt shared state.
+
+### Thread Pool Model
+
+Some databases (MySQL Enterprise, Oracle, SQL Server) use a thread pool instead of creating a thread per connection. A fixed number of worker threads are created at startup, and incoming queries from all connections are distributed across these threads.
+
+```
+Connections: C1, C2, C3, C4, C5, C6, C7, C8
+                      |
+                   Queue
+                      |
+               +------+------+
+               |      |      |
+            Thread1 Thread2 Thread3
+```
+
+This prevents the database from being overwhelmed when thousands of connections are open. Without a thread pool, 1000 connections would create 1000 threads, each consuming memory and CPU scheduling overhead, even if most of them are idle.
+
+---
+
+## Connection Pooling
+
+### The Problem
+
+Creating a database connection is expensive. It involves:
+
+1. TCP handshake between client and database server
+2. Authentication (username, password, SSL negotiation)
+3. The database allocating resources (a new process or thread, memory buffers)
+
+If your Node.js server creates a new database connection for every incoming HTTP request and destroys it when the request is done, you pay this cost on every single request. Under high load (hundreds or thousands of requests per second), this becomes a bottleneck.
+
+### The Solution
+
+A connection pool maintains a set of pre-established, reusable database connections. When your application needs to query the database, it borrows a connection from the pool. When the query finishes, the connection is returned to the pool, not closed.
+
+```javascript
+import pg from "pg";
+
+const pool = new pg.Pool({
+    host: "localhost",
+    database: "myapp",
+    user: "appuser",
+    password: "secret",
+    max: 20,            // Maximum 20 connections in the pool
+    idleTimeoutMillis: 30000,
+});
+
+app.get("/users", async (req, res) => {
+    // Borrows a connection from the pool
+    const result = await pool.query("SELECT * FROM users");
+    // Connection is automatically returned to the pool
+    res.json(result.rows);
+});
+```
+
+The pool starts with a few connections (or zero, depending on configuration) and grows up to `max` as demand increases. Idle connections are kept alive so subsequent requests avoid the connection setup cost.
+
+### Why This Matters for Node.js Specifically
+
+A Node.js server handles many requests concurrently on a single thread using async I/O. Without a connection pool, every concurrent request would try to create its own database connection. With 500 concurrent requests, that means 500 connection attempts, which would overwhelm the database (PostgreSQL's default `max_connections` is 100).
+
+With a pool of 20 connections, those 500 concurrent requests share the 20 connections. If all 20 are in use, the 501st request waits until one becomes available. This protects the database from being overloaded while keeping your application responsive.
+
+### Pool Sizing
+
+Setting the pool size is a balancing act:
+
+| Pool too small | Pool too large |
+|---|---|
+| Requests queue up waiting for connections | Database process/thread count grows, increasing memory and CPU overhead |
+| Higher latency under load | OS spends time context-switching between many threads |
+| Database is underutilized | Diminishing returns beyond the number of CPU cores |
+
+A common starting point is `pool_size = (number_of_CPU_cores * 2) + number_of_disks` on the database server. For a typical 4-core machine with SSD storage, a pool of 10-20 connections per application instance is reasonable.
+
+---
+
+## Concurrency Control
+
+When multiple queries execute concurrently, some of them will inevitably try to read or modify the same data. The database must ensure that concurrent operations produce correct results, as if they had executed one at a time. This is the job of the concurrency control system.
+
+### The Problem: Concurrent Writes
+
+Consider two transactions running simultaneously:
+
+```sql
+-- Transaction A (transfer $100 from account 1 to account 2)
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+
+-- Transaction B (transfer $50 from account 1 to account 3)
+UPDATE accounts SET balance = balance - 50  WHERE id = 1;
+UPDATE accounts SET balance = balance + 50  WHERE id = 3;
+```
+
+If account 1 starts with $500, the correct result after both transactions is $350 ($500 - $100 - $50). But if both transactions read the balance as $500 simultaneously, then A writes $400 and B writes $450 (or vice versa), one update is lost.
+
+This is called a **lost update**, and it is one of several anomalies that concurrency control prevents.
+
+### Locking
+
+The most straightforward concurrency control mechanism is locking. When a transaction wants to modify a row, it acquires a lock on that row. Other transactions that want to modify the same row must wait until the lock is released.
+
+```
+Transaction A                    Transaction B
+     |                                |
+  LOCK row (id=1)                     |
+     |                          LOCK row (id=1)
+  UPDATE balance                      |
+     |                           [waiting...]
+  COMMIT                              |
+     |                           [lock acquired]
+  UNLOCK                              |
+                                 UPDATE balance
+                                      |
+                                 COMMIT
+```
+
+Transaction B's update now reads the balance after A's change, producing the correct result.
+
+### Read vs Write Locks
+
+Most databases distinguish between shared locks (for reading) and exclusive locks (for writing):
+
+| Lock Type | Also Called | Allows Concurrent Reads | Allows Concurrent Writes |
+|---|---|---|---|
+| Shared | Read lock | Yes | No |
+| Exclusive | Write lock | No | No |
+
+Multiple transactions can hold shared locks on the same row simultaneously (they are all just reading). But an exclusive lock blocks both readers and other writers. This maximizes concurrency for read-heavy workloads while still protecting against conflicting writes.
+
+### MVCC (Multi-Version Concurrency Control)
+
+PostgreSQL and many modern databases use a more sophisticated approach called MVCC. Instead of blocking readers with locks, the database keeps multiple versions of each row. A transaction sees a snapshot of the data as it was when the transaction started, regardless of what other transactions are doing concurrently.
+
+```
+Row (id=1) versions:
+  Version 1: balance = 500  (visible to Transaction B's snapshot)
+  Version 2: balance = 400  (written by Transaction A)
+```
+
+This means readers never block writers, and writers never block readers. Only conflicting writes need to be serialized. This is a significant performance advantage for read-heavy workloads, which describes most web applications.
+
+---
+
+## Transactions
+
+A transaction is a sequence of one or more SQL statements that execute as a single logical unit. Either all statements succeed (commit) or none of them take effect (rollback).
+
+```sql
+BEGIN;
+  UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+  UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+COMMIT;
+```
+
+If the server crashes between the two UPDATE statements, the transaction is rolled back. Account 1 does not lose $100 without account 2 gaining it. This property is called **atomicity**.
+
+Transactions provide four guarantees, known as **ACID**:
+
+| Property | Meaning |
+|---|---|
+| **Atomicity** | All statements in the transaction succeed, or none do |
+| **Consistency** | The database moves from one valid state to another (constraints are enforced) |
+| **Isolation** | Concurrent transactions do not interfere with each other |
+| **Durability** | Once committed, the data survives crashes, power failures |
+
+The isolation property is directly related to the concurrency control mechanisms described above. The level of isolation can be configured (read uncommitted, read committed, repeatable read, serializable), trading correctness guarantees against performance.
+
+---
+
+## Putting It All Together
+
+Here is the complete picture of what happens when your Node.js server handles an HTTP request that queries the database:
+
+```
+Browser
+  |
+  | HTTP request (GET /users)
+  |
+Node.js server (port 3000)
+  |
+  | await db.query("SELECT * FROM users")
+  |   |
+  |   | Borrows connection from pool
+  |   | Sends SQL over TCP to PostgreSQL
+  |   | await suspends handler (JS thread is free)
+  |   |
+  |   PostgreSQL (port 5432)
+  |     |
+  |     | Backend process receives query
+  |     | Parser -> Planner -> Executor
+  |     | Acquires necessary locks (shared lock for SELECT)
+  |     | Reads data from disk or buffer cache
+  |     | Returns result rows over TCP
+  |     | Releases locks
+  |     |
+  |   Node.js receives result
+  |   | Connection returned to pool
+  |   | Handler resumes
+  |   |
+  | res.json(users)
+  |
+Browser receives response
+```
+
+The database is a concurrent server, just like your application. It has its own processes or threads, its own connection handling, and its own mechanisms for ensuring that concurrent access to shared data produces correct results.

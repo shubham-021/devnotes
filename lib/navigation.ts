@@ -166,6 +166,9 @@ export const navigation: NavSection[] = [
             { title: "File System", slug: "nodejs/file-system" },
             { title: "Paths", slug: "nodejs/paths" },
             { title: "CLI Tools", slug: "nodejs/cli-tools" },
+            { title: "Concurrency Model", slug: "nodejs/concurrency-model" },
+            { title: "Server Request Lifecycle", slug: "nodejs/server-request-lifecycle" },
+            { title: "Async/Await", slug: "nodejs/async-await" },
         ],
     },
     {
@@ -235,6 +238,7 @@ export const navigation: NavSection[] = [
             { title: "Load Balancing Technologies", slug: "system-design/load-balancing-technologies" },
             { title: "Load Balancing Practical (NGINX)", slug: "system-design/load-balancing-practical-nginx" },
             { title: "Load Balancing Practical (Custom)", slug: "system-design/load-balancing-practical-custom" },
+            { title: "Database Concurrency", slug: "system-design/database-concurrency" },
         ],
     },
 ];

@@ -1,0 +1,228 @@
+---
+title: Async/Await
+description: What async/await actually does under the hood, how await suspends a function without blocking the thread, and why it was introduced when Promises already existed
+---
+
+## Async/Await Is Not What Makes JavaScript Asynchronous
+
+A common misconception is that `async/await` is the mechanism that enables non-blocking I/O in JavaScript. It is not. The runtime (browser or Node.js) and Promises already provide non-blocking behavior. `async/await` is syntax that makes asynchronous code easier to read and write.
+
+Before `async/await`, non-blocking I/O worked perfectly fine:
+
+```javascript
+fetch("/users")
+    .then(response => response.json())
+    .then(users => {
+        console.log(users);
+    });
+
+console.log("hello");
+```
+
+The JS thread is not blocked while the network request is in flight. `"hello"` prints immediately. When the response arrives, the `.then()` callbacks execute. This has always been the case since Promises were introduced.
+
+`async/await` gives us a way to write that same non-blocking flow in a style that looks like sequential, synchronous code.
+
+---
+
+## What `await` Actually Does
+
+Consider this code:
+
+```javascript
+async function getUsers() {
+    const response = await fetch("/users");
+    const users = await response.json();
+    console.log(users);
+}
+```
+
+It looks like the function waits for `fetch()` to complete, then waits for `.json()` to complete, then logs the result. And in terms of this function's behavior, that is correct.
+
+But `await` does not block the JavaScript thread. It suspends only the current async function.
+
+When execution reaches `await fetch("/users")`:
+
+1. `fetch()` is called, which starts a network request and returns a Promise.
+2. The Promise is in a `pending` state.
+3. `await` sees the pending Promise and **suspends this function**. Execution of `getUsers` pauses at this line.
+4. Control returns to whoever called `getUsers()`. The event loop is free to process other work.
+5. When the network response arrives, the Promise resolves. The event loop schedules the continuation of `getUsers` as a microtask.
+6. `getUsers` resumes from where it paused, and `response` now holds the resolved value.
+
+The critical sentence: **`await` pauses the current async function, not the JavaScript thread.**
+
+---
+
+## Tracing Execution Order
+
+```javascript
+async function getUsers() {
+    console.log("A");
+    const response = await fetch("/users");
+    console.log("B");
+}
+
+getUsers();
+console.log("C");
+```
+
+**Step 1:** `getUsers()` is called. It executes synchronously until the first `await`. `console.log("A")` runs. Output: `A`.
+
+**Step 2:** `await fetch("/users")` is reached. `fetch()` starts the network request and returns a pending Promise. The `await` suspends `getUsers`. Control returns to the caller.
+
+**Step 3:** `console.log("C")` runs. Output: `A`, `C`.
+
+**Step 4:** Later, the network response arrives. The fetch Promise resolves. The continuation of `getUsers` is placed on the microtask queue.
+
+**Step 5:** The event loop picks up the continuation. `getUsers` resumes. `console.log("B")` runs. Output: `A`, `C`, `B`.
+
+The order is `A`, `C`, `B` -- not `A`, `B`, `C`. This proves that `await` did not block the thread. Code after the `getUsers()` call continued executing while the function was suspended.
+
+---
+
+## Async/Await as Syntactic Sugar
+
+Under the hood, `async/await` is built on top of Promises. An `async` function always returns a Promise, and `await` is essentially wrapping the rest of the function in a `.then()` callback.
+
+This:
+
+```javascript
+async function getUsers() {
+    const response = await fetch("/users");
+    console.log(response);
+}
+```
+
+is conceptually equivalent to:
+
+```javascript
+function getUsers() {
+    return fetch("/users").then(response => {
+        console.log(response);
+    });
+}
+```
+
+The behavior is the same. The runtime starts the async operation, registers a continuation, and resumes when the operation completes. `async/await` just expresses this pattern without nesting `.then()` chains.
+
+---
+
+## Why Async/Await Was Introduced
+
+If Promises already provide non-blocking behavior, why was `async/await` added to the language?
+
+Consider five dependent asynchronous operations.
+
+**With Promises:**
+
+```javascript
+getUser()
+    .then(user => getOrders(user.id))
+    .then(orders => getProducts(orders))
+    .then(products => calculateTotal(products))
+    .then(total => generateInvoice(total))
+    .catch(error => handleError(error));
+```
+
+This is manageable, but it nests further with conditional logic, loops, or error handling for specific steps.
+
+**With async/await:**
+
+```javascript
+async function processOrder() {
+    try {
+        const user = await getUser();
+        const orders = await getOrders(user.id);
+        const products = await getProducts(orders);
+        const total = await calculateTotal(products);
+        const invoice = await generateInvoice(total);
+    } catch (error) {
+        handleError(error);
+    }
+}
+```
+
+The second version reads like normal sequential code. Each step clearly follows the previous one. Error handling uses the familiar `try/catch` pattern instead of `.catch()` chains. Variables from earlier steps are naturally in scope for later steps without closure gymnastics.
+
+---
+
+## How This Enables Server Concurrency
+
+This is where the concept becomes powerful in backend JavaScript.
+
+Consider a Node.js server handling three simultaneous requests, each of which queries a database:
+
+```javascript
+app.get("/users", async (req, res) => {
+    const users = await db.query("SELECT * FROM users");
+    res.json(users);
+});
+```
+
+When Request A hits this handler, `db.query()` starts an async I/O operation and `await` suspends the handler. The JavaScript thread is free.
+
+Request B arrives. The same handler starts, calls `db.query()`, and suspends.
+
+Request C arrives. Same thing.
+
+Now there are three database queries in flight, all on a single JavaScript thread. None of them are blocking the thread. The thread processes whichever continuation becomes ready first.
+
+```
+A: start --> await db.query() --> [suspended]
+B:           start --> await db.query() --> [suspended]
+C:                     start --> await db.query() --> [suspended]
+                                                        |
+                                          DB results arrive
+                                                        |
+A: res.json(users)  <-- resumed
+B: res.json(users)  <-- resumed
+C: res.json(users)  <-- resumed
+```
+
+This is how a single-threaded server can handle thousands of concurrent I/O-bound requests. Each `await` is a point where the function yields control, allowing the thread to service other requests.
+
+---
+
+## Common Mistakes
+
+### Forgetting `await`
+
+```javascript
+async function save() {
+    db.query("INSERT INTO users ...");  // Missing await
+    console.log("saved");
+}
+```
+
+Without `await`, the query starts but `"saved"` prints immediately without waiting for the database to confirm. Errors from the query will be unhandled Promise rejections.
+
+### Sequential awaits when parallel is possible
+
+```javascript
+// Sequential: total time = time(A) + time(B)
+const a = await fetchA();
+const b = await fetchB();
+
+// Parallel: total time = max(time(A), time(B))
+const [a, b] = await Promise.all([fetchA(), fetchB()]);
+```
+
+If two operations are independent, use `Promise.all()` to run them concurrently. Sequential `await` statements force each operation to complete before the next one starts.
+
+### Using await in a loop
+
+```javascript
+// Sends one query at a time
+for (const id of ids) {
+    const user = await db.query("SELECT * FROM users WHERE id = ?", [id]);
+    results.push(user);
+}
+
+// Sends all queries concurrently
+const results = await Promise.all(
+    ids.map(id => db.query("SELECT * FROM users WHERE id = ?", [id]))
+);
+```
+
+The loop version serializes the queries. Each one waits for the previous to finish. The `Promise.all` version starts all queries immediately and waits for all of them to complete.
