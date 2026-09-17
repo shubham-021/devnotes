@@ -197,6 +197,8 @@ export const navigation: NavSection[] = [
             { title: "File Permissions", slug: "random/file-permissions" },
             { title: "Filesystem", slug: "random/filesystem" },
             { title: "Processes", slug: "random/processes" },
+            { title: "TTY and Device Files", slug: "random/tty-and-device-files" },
+            { title: "Pseudo-Terminals (PTY)", slug: "random/pseudo-terminals" },
             { title: "HTTP and Networking", slug: "random/http-and-networking" },
             { title: "SSH", slug: "random/ssh" },
             { title: "tsconfig.json", slug: "random/tsconfig" },

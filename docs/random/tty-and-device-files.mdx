@@ -1,0 +1,166 @@
+---
+title: TTY and Device Files
+description: What a TTY is, where the concept comes from, what Unix device files are, and how /dev/ttysXXX represents a terminal
+---
+
+## What is a TTY
+
+TTY stands for **teletypewriter**. The term comes from the earliest days of computing, when users interacted with a computer through a physical machine that had a keyboard for input and a printer (later a screen) for output. You typed characters, the computer received them, and the computer sent characters back for the teletypewriter to print.
+
+That physical device was called a TTY.
+
+Today, no one uses a teletypewriter. But operating systems still need a concept representing "the thing through which a program communicates with a person using text input and output." Unix kept the term TTY for this concept.
+
+When someone says "this program is connected to a TTY," they do not mean a physical device. They mean the program has a terminal interface available to it -- a channel through which it can receive keyboard input and send text output.
+
+---
+
+## The Terminal Emulator
+
+When you open an application like Kitty, iTerm2, or the built-in Terminal.app on macOS, you are running a **terminal emulator**. The name is literal: the application emulates what a physical terminal used to do.
+
+A physical terminal was a hardware device that displayed text output and captured keyboard input. A terminal emulator does the same thing as a graphical window on your screen. It renders text that programs produce, and it captures your keystrokes and delivers them to programs.
+
+The terminal emulator is not the terminal. The terminal emulator is a graphical application. The terminal is the OS-level interface that connects the emulator to the programs running inside it. This distinction matters because you could run a shell without a terminal emulator (for example, over SSH or in a script), and you could run a terminal emulator with any shell.
+
+---
+
+## The `tty` Command
+
+When you open a terminal window and run:
+
+```bash
+tty
+```
+
+you see something like:
+
+```
+/dev/ttys001
+```
+
+The `tty` command is a simple program. Its only job is to ask the operating system: "Which terminal device am I connected to?" and print the answer.
+
+It does not define or create the terminal. It just reports which one is associated with the current session.
+
+---
+
+## What is /dev
+
+`/dev` is a directory on every Unix system. It contains **device files** -- special entries that represent hardware devices, virtual devices, and OS-provided interfaces.
+
+```bash
+ls /dev
+```
+
+You will see hundreds of entries. Among them on macOS:
+
+```
+ttys000
+ttys001
+ttys002
+disk0
+null
+zero
+random
+```
+
+Each of these paths represents something the operating system manages. `/dev/disk0` represents a disk. `/dev/null` is a sink that discards anything written to it. `/dev/ttys001` represents a terminal.
+
+---
+
+## Device Files Are Not Normal Files
+
+When you hear "file," you probably think of data stored on disk:
+
+```bash
+cat hello.txt
+# Hello world
+```
+
+`hello.txt` is a regular file. It contains bytes. Those bytes are stored on a physical disk.
+
+`/dev/ttys001` is different. It is not a container of data stored somewhere. It is an **interface** -- a point of interaction that the operating system provides so that programs can communicate with a particular terminal.
+
+A useful analogy: think of buttons on a vending machine. The buttons are not the drinks. The buttons are an interface for interacting with the machine. Similarly, `/dev/ttys001` is not the terminal itself. It is the path through which programs interact with that terminal.
+
+When a program reads from `/dev/ttys001`, it receives characters typed by the user in that terminal session. When a program writes to `/dev/ttys001`, the text appears in that terminal window. The "file" is actually a two-way communication channel managed by the kernel.
+
+---
+
+## Why Unix Calls Everything a File
+
+This is one of the most important ideas in Unix design. Unix provides a common interface for fundamentally different things:
+
+| Thing | What it actually is |
+|---|---|
+| `/home/user/notes.txt` | Bytes stored on disk |
+| `/dev/ttys001` | A terminal device |
+| `/dev/null` | A data sink (discards everything) |
+| `/dev/random` | A random number generator |
+| A pipe | A one-way data channel between processes |
+| A socket | A network connection endpoint |
+
+These are completely different under the hood. But Unix lets programs interact with many of them through the same set of operations: open, read, write, close.
+
+A program that reads from stdin does not need to know whether stdin is connected to a file, a terminal, a pipe, or a network socket. It just calls `read()`. The kernel handles the specifics based on what the file descriptor actually refers to.
+
+This is called the **"everything is a file"** abstraction. It means programs can be written generically, and the environment decides what they are actually connected to.
+
+```bash
+# cat reads from stdin and writes to stdout
+# stdin can be a terminal, a file, or a pipe -- cat doesn't care
+
+cat                    # stdin = terminal (you type, it echoes)
+cat < data.txt         # stdin = a file
+echo "hello" | cat     # stdin = a pipe
+```
+
+---
+
+## /dev/ttysXXX in Practice
+
+Each terminal session gets its own device file. When you open three terminal windows, the OS may assign:
+
+```
+Window 1  -->  /dev/ttys000
+Window 2  -->  /dev/ttys001
+Window 3  -->  /dev/ttys002
+```
+
+This is why typing in one terminal window does not affect another. Each window is connected to a separate terminal device.
+
+You can verify this. Open two terminal windows and run `tty` in each:
+
+```bash
+# Window 1
+tty
+# /dev/ttys000
+
+# Window 2
+tty
+# /dev/ttys001
+```
+
+You can even write directly to another terminal's device file (if permissions allow):
+
+```bash
+# In window 1, send text to window 2
+echo "hello from window 1" > /dev/ttys001
+```
+
+The text "hello from window 1" will appear in window 2. This works because writing to `/dev/ttys001` sends data to the terminal device associated with window 2.
+
+---
+
+## Three Things to Keep Separate
+
+These three terms come up constantly and are easy to conflate:
+
+| Term | What it is |
+|---|---|
+| **TTY** | The terminal concept/interface -- the abstract idea of a text-based communication channel between a program and a user |
+| **/dev/ttysXXX** | A device file path through which the operating system exposes a specific terminal instance to programs |
+| **`tty`** (the command) | A program that prints which terminal device the current session is connected to |
+
+When you run the `tty` command, you are not asking "what is a TTY." You are asking: "Which terminal device am I currently connected to?" The answer is a device file path like `/dev/ttys001`.

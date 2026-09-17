@@ -1,0 +1,261 @@
+---
+title: Pseudo-Terminals (PTY)
+description: How pseudo-terminals provide the communication channel between terminal emulators and shells, the master/slave architecture, and how keystrokes and command output actually travel through the system
+---
+
+## The Problem
+
+A terminal emulator like Kitty is a graphical application. A shell like zsh is a command-line program. They need to communicate with each other:
+
+- When you press a key, Kitty needs to deliver that character to zsh.
+- When zsh runs a command that produces output, that output needs to get back to Kitty so it can render the text on screen.
+
+These are two separate programs. They need a communication channel. That channel is a **pseudo-terminal** (PTY).
+
+---
+
+## What is a PTY
+
+PTY stands for **pseudo-terminal**. The word "pseudo" means "not real" or "simulated."
+
+Historically, a TTY was a physical device -- a real teletypewriter connected to a computer. Programs interacted with it through the kernel's terminal subsystem. A PTY recreates that same terminal interface entirely in software. There is no physical hardware involved.
+
+The operating system provides the PTY mechanism. When a terminal emulator starts, it asks the OS to create a PTY. The OS sets up the necessary kernel structures, and both the emulator and the shell interact through them.
+
+---
+
+## The Two Sides of a PTY
+
+A PTY is not a single endpoint. It is a pair of connected endpoints:
+
+| Side | Name | Used by |
+|---|---|---|
+| **Master** | PTY master | The terminal emulator (Kitty, iTerm2, Terminal.app) |
+| **Slave** | PTY slave | The shell or program running inside the terminal (zsh, bash, vim) |
+
+Data written to the master side can be read from the slave side, and vice versa. They form a bidirectional channel.
+
+The master side is the "outer" side -- the emulator that interfaces with the graphical display and keyboard. The slave side is the "inner" side -- the program that thinks it is talking to a terminal.
+
+From the shell's perspective, the slave side behaves identically to a real terminal. The shell can read input, write output, check terminal dimensions, handle Ctrl+C, and use all the terminal features it expects. It does not know or care that the other end is Kitty rather than a physical teletypewriter.
+
+---
+
+## How a Terminal Session is Created
+
+When you open a new terminal window, the following sequence occurs:
+
+1. Kitty asks the operating system to create a new PTY pair.
+2. The OS creates a master endpoint and a slave endpoint, connected to each other internally.
+3. Kitty receives a reference to the master side.
+4. Kitty starts a new shell process (e.g., zsh).
+5. The shell's standard input, standard output, and standard error are connected to the slave side of the PTY.
+6. The slave side is assigned a device path like `/dev/ttys001`.
+
+At this point, the setup looks like:
+
+```
+Kitty (graphical application)
+  |
+  | holds reference to
+  v
+PTY master
+  |
+  | connected internally by the kernel
+  v
+PTY slave  -->  /dev/ttys001
+  |
+  | stdin, stdout, stderr connected to
+  v
+zsh (shell process)
+```
+
+When you run `tty` inside that shell, it reports `/dev/ttys001` because that is the device path of the PTY slave side attached to the shell's terminal.
+
+---
+
+## Following a Keystroke
+
+Suppose you type the character `l` on your keyboard.
+
+**Step 1: Keyboard to Kitty.** The operating system delivers the keyboard event to Kitty because Kitty owns the focused graphical window. This is the same mechanism by which any GUI application receives keyboard input.
+
+**Step 2: Kitty to PTY master.** Kitty takes the character `l` and writes it to the PTY master side.
+
+**Step 3: PTY master to PTY slave.** The kernel's PTY subsystem transfers the character from the master side to the slave side. Along the way, the **line discipline** (a kernel component sitting between master and slave) may process the character -- for example, echoing it back to the master so Kitty can display what you typed.
+
+**Step 4: PTY slave to zsh.** The shell reads from its stdin, which is connected to the PTY slave. It receives the character `l`.
+
+The complete path:
+
+```
+Keyboard --> OS --> Kitty --> PTY master --> PTY slave --> zsh
+```
+
+---
+
+## Following Command Output
+
+Suppose zsh runs `ls` and the command produces output:
+
+```
+Applications
+Documents
+Downloads
+```
+
+**Step 1: ls to PTY slave.** The `ls` command writes its output to stdout. Since `ls` was started by zsh, and zsh's stdout is connected to the PTY slave, the output goes to the PTY slave.
+
+**Step 2: PTY slave to PTY master.** The kernel transfers the data from the slave side to the master side.
+
+**Step 3: PTY master to Kitty.** Kitty reads from the PTY master and receives the text.
+
+**Step 4: Kitty to screen.** Kitty interprets the text (including any ANSI escape codes for colors, cursor movement, etc.) and renders it in the terminal window.
+
+The complete path:
+
+```
+ls --> stdout --> PTY slave --> PTY master --> Kitty --> Screen
+```
+
+---
+
+## The Complete Round Trip
+
+Putting both directions together, this is what happens when you type `ls` and press Enter:
+
+```
+Keyboard
+  | 'l', 's', Enter
+  v
+Kitty
+  | writes characters
+  v
+PTY master
+  | kernel transfers
+  v
+PTY slave
+  | stdin
+  v
+zsh (receives "ls\n", executes ls)
+  |
+  v
+ls (writes output to stdout)
+  |
+  v
+PTY slave
+  | kernel transfers
+  v
+PTY master
+  | Kitty reads
+  v
+Kitty (renders output in window)
+  |
+  v
+Screen
+```
+
+Every interaction you have with a terminal window follows this pattern. Characters go in through the master, reach the program through the slave, and output travels back the same way in reverse.
+
+---
+
+## Why Each Window Gets Its Own PTY
+
+When you open three terminal windows, the OS creates three independent PTY pairs:
+
+```
+Kitty window 1  <-->  PTY #1 (master/slave)  <-->  zsh #1  -->  /dev/ttys000
+Kitty window 2  <-->  PTY #2 (master/slave)  <-->  zsh #2  -->  /dev/ttys001
+Kitty window 3  <-->  PTY #3 (master/slave)  <-->  zsh #3  -->  /dev/ttys002
+```
+
+Each PTY is an isolated communication channel. Characters typed in window 1 travel through PTY #1 to zsh #1. They never reach zsh #2 or zsh #3. This is why terminal sessions are independent of each other.
+
+---
+
+## The Line Discipline
+
+Between the PTY master and PTY slave, the kernel inserts a processing layer called the **line discipline**. This is what makes a PTY behave like a real terminal rather than a raw data pipe.
+
+The line discipline handles:
+
+- **Echo** -- When you type a character, it is automatically sent back to the master side so the terminal emulator can display it. The program on the slave side does not have to echo input manually.
+- **Line buffering** -- In the default mode (canonical mode), the line discipline collects characters until you press Enter, then delivers the entire line to the program. The program does not see individual keystrokes.
+- **Special characters** -- Ctrl+C generates a SIGINT signal and sends it to the foreground process. Ctrl+D sends an end-of-file. Ctrl+Z sends SIGTSTP (suspend). These are handled by the line discipline before the program sees them.
+- **Backspace** -- When you press backspace, the line discipline removes the last character from its buffer and sends an erase sequence back to the master. The program never sees the deleted character.
+
+```
+PTY master  <-->  Line Discipline  <-->  PTY slave
+                       |
+                  echo, buffering,
+                  signal generation,
+                  special character
+                  handling
+```
+
+Programs can switch the terminal out of canonical mode into **raw mode**, where the line discipline does minimal processing. This is what programs like vim, less, and interactive TUIs do -- they want to receive every individual keystroke immediately rather than waiting for complete lines.
+
+---
+
+## TTY vs PTY: Interface vs Implementation
+
+This is the terminology distinction that ties everything together.
+
+**TTY** describes the interface -- the set of behaviors a program expects from a terminal: reading input, writing output, handling signals, terminal settings, screen dimensions.
+
+**PTY** describes one implementation of that interface -- a software-based pseudo-terminal with a master/slave pair.
+
+From the shell's perspective, it interacts with a TTY. It does not care how that TTY is implemented. In a modern graphical terminal emulator, the TTY is implemented as the slave side of a PTY. But the shell would behave identically if it were connected to a physical serial terminal, an SSH session, or any other TTY implementation.
+
+```
+Implementation                    Interface
+
+Physical terminal  ------------->  TTY
+PTY slave          ------------->  TTY
+Serial port        ------------->  TTY
+                                    |
+                                    v
+                                  Shell
+```
+
+This is why both terms exist. TTY is what the program sees. PTY is how the OS provides it.
+
+---
+
+## Where /dev/ttysXXX Fits
+
+The device file `/dev/ttys001` is the kernel's way of exposing the PTY slave side to userspace programs. It is the name the OS assigns to that particular terminal device.
+
+```
+PTY (kernel structure)
+  |
+  +-- master side  -->  held by Kitty (via file descriptor)
+  |
+  +-- slave side   -->  exposed as /dev/ttys001
+                         |
+                         +-- zsh's stdin, stdout, stderr point here
+```
+
+When a program calls `tty` or checks whether it is connected to a terminal (using `isatty()`), it is asking the kernel about this device. The path `/dev/ttys001` is simply the human-readable name for that specific PTY slave instance.
+
+---
+
+## SSH and PTYs
+
+PTYs are not limited to local terminal emulators. When you SSH into a remote machine, a PTY is created on the remote side:
+
+```
+Local machine                    Remote machine
+     |                                |
+  Terminal                        SSH server
+  emulator                           |
+     |                          creates PTY
+     |                                |
+     | SSH connection           PTY master <--> PTY slave
+     |<------------------------->     |           |
+     |                          SSH server       zsh
+```
+
+The SSH server takes the place of the terminal emulator on the remote machine. It holds the master side of the PTY and communicates with your local terminal through the encrypted SSH connection. The remote shell is connected to the slave side, and from its perspective, it has a normal terminal.
+
+This is why `tty` on a remote SSH session shows a device path like `/dev/pts/0` (on Linux) or `/dev/ttys003` (on macOS). A PTY was created on the remote machine for that session.
