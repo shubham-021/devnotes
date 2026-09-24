@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Mono } from "next/font/google";
 import { FontProvider } from "@/lib/font-context";
 import { ThemeProvider } from "@/lib/theme-context";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const dmMono = DM_Mono({
@@ -26,6 +27,7 @@ export default function RootLayout({
         <ThemeProvider>
           <FontProvider>{children}</FontProvider>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
