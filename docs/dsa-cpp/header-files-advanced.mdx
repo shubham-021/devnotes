@@ -278,35 +278,13 @@ Modern C++ (C++20 and later) introduced **modules** as an alternative to headers
 
 The relationship between headers, source files, the compiler, and the linker:
 
-```
-┌─────────────────────────────────────────────────┐
-│                  PREPROCESSOR                    │
-│                                                  │
-│  main.c  ──#include──>  math.h contents          │
-│           pasted into main.c                     │
-└──────────────────────┬──────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────┐
-│                   COMPILER                       │
-│                                                  │
-│  Expanded main.c  ──>  main.o                    │
-│  (knows declarations,  (has placeholders for     │
-│   verifies calls)       unresolved symbols)      │
-│                                                  │
-│  math.c  ──>  math.o                             │
-│  (has actual function   (has compiled machine     │
-│   definitions)           code for functions)      │
-└──────────────────────┬──────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────┐
-│                    LINKER                         │
-│                                                  │
-│  main.o  +  math.o  ──>  executable              │
-│  (connects placeholders to actual code)          │
-└─────────────────────────────────────────────────┘
-```
+| Stage | Input | Output | What happens |
+|-------|-------|--------|-------------|
+| **1. Preprocessor** | `main.c` + `math.h` | Expanded `main.c` (header contents pasted in) | `#include "math.h"` is replaced by the literal text of `math.h`. The compiler never sees the `#include` directive. |
+| **2. Compiler** | Expanded `main.c` | `main.o` (object file with unresolved symbols) | The compiler sees the declarations from the header, verifies that function calls are correct, and generates machine code. Calls to functions defined elsewhere become placeholders. |
+| **2. Compiler** | `math.c` | `math.o` (object file with function implementations) | The compiler generates the actual machine code for the functions declared in the header. |
+| **3. Linker** | `main.o` + `math.o` | Final executable | The linker connects every placeholder in `main.o` to the corresponding machine code in `math.o`. If any symbol is missing, it reports an "undefined reference" error. |
+
 
 | Concept | Role |
 |---------|------|

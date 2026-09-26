@@ -215,15 +215,14 @@ The declaration told the compiler *what* `add` looks like. Nobody told the linke
 
 ### The mental model
 
-```
-main.c ──[#include]──> sees declarations ──[compile]──> main.o (needs add)
-                                                              \
-                                                               ──> linker ──> executable
-                                                              /
-math_utils.c ──[compile]──> math_utils.o (provides add)
-```
+| Stage | What happens |
+|-------|-------------|
+| **Preprocessing** | `main.c` includes `math_utils.h` → the compiler sees declarations of `add()` and `multiply()` |
+| **Compiling main.c** | The compiler trusts the declarations, generates `main.o` with a placeholder: "I need `add` from somewhere" |
+| **Compiling math_utils.c** | The compiler generates `math_utils.o` containing the actual machine code for `add()` and `multiply()` |
+| **Linking** | The linker takes `main.o` + `math_utils.o`, connects the placeholder in `main.o` to the real `add` in `math_utils.o`, and produces the final executable |
 
-**Header = information for the compiler. Source file = implementation for the linker.**
+The core principle: **headers give information to the compiler; source files give implementations to the linker.**
 
 ---
 
