@@ -1,0 +1,946 @@
+---
+title: Writing a Header File
+description: A complete, realistic example of writing a C header file from scratch — every line explained for someone who only knows the basics
+---
+
+## What We Are Building
+
+We are going to build a small **logging library** in C. A logging library lets your program print structured messages — with timestamps, severity levels, and formatting — instead of scattering raw `printf` calls everywhere.
+
+This is not a toy example. Real-world C libraries like SQLite, curl, and Redis all structure their headers very similarly to what we are about to write. By the end of this page, every line in the header will make complete sense to you.
+
+---
+
+## The Final Header File
+
+Here is the complete header. Read through it once — you do not need to understand it yet. The rest of this page will walk through every single line.
+
+```c
+/**
+ * logger.h — A simple structured logging library.
+ *
+ * Usage:
+ *   #include "logger.h"
+ *
+ *   logger_t *log = logger_create(LOG_DEBUG, stderr);
+ *   LOG_INFO(log, "Server started on port %d", 8080);
+ *   logger_destroy(log);
+ */
+
+#ifndef LOGGER_H
+#define LOGGER_H
+
+#include <stdio.h>
+#include <stdarg.h>
+#include <time.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* ── Log Levels ─────────────────────────────────────── */
+
+typedef enum {
+    LOG_DEBUG   = 0,
+    LOG_INFO    = 1,
+    LOG_WARN    = 2,
+    LOG_ERROR   = 3,
+    LOG_FATAL   = 4
+} log_level_t;
+
+/* ── Configuration ──────────────────────────────────── */
+
+#define LOGGER_MAX_MSG_LEN   1024
+#define LOGGER_DEFAULT_LEVEL LOG_INFO
+#define LOGGER_VERSION_MAJOR 1
+#define LOGGER_VERSION_MINOR 0
+#define LOGGER_VERSION_PATCH 3
+
+/* ── Compiler Hints ─────────────────────────────────── */
+
+#ifdef __GNUC__
+    #define LOGGER_PRINTF_FMT(fmt_idx, args_idx) \
+        __attribute__((format(printf, fmt_idx, args_idx)))
+    #define LOGGER_NORETURN __attribute__((__noreturn__))
+#else
+    #define LOGGER_PRINTF_FMT(fmt_idx, args_idx)
+    #define LOGGER_NORETURN
+#endif
+
+/* ── Core Types ─────────────────────────────────────── */
+
+typedef void (*log_output_fn)(const char *message, void *user_data);
+
+typedef struct {
+    log_level_t  min_level;
+    FILE        *output;
+    int          use_color;
+    int          show_timestamp;
+    log_output_fn custom_writer;
+    void         *writer_data;
+} logger_t;
+
+/* ── Lifecycle ──────────────────────────────────────── */
+
+logger_t *logger_create(log_level_t min_level, FILE *output);
+void      logger_destroy(logger_t *logger);
+
+/* ── Configuration ──────────────────────────────────── */
+
+void logger_set_level(logger_t *logger, log_level_t level);
+void logger_enable_color(logger_t *logger, int enable);
+void logger_enable_timestamp(logger_t *logger, int enable);
+void logger_set_output(logger_t *logger, FILE *output);
+void logger_set_custom_writer(logger_t *logger, log_output_fn fn, void *data);
+
+/* ── Logging Functions ──────────────────────────────── */
+
+void logger_log(logger_t *logger, log_level_t level,
+                const char *file, int line,
+                const char *fmt, ...) LOGGER_PRINTF_FMT(5, 6);
+
+LOGGER_NORETURN
+void logger_fatal(logger_t *logger,
+                  const char *file, int line,
+                  const char *fmt, ...) LOGGER_PRINTF_FMT(4, 5);
+
+/* ── Convenience Macros ─────────────────────────────── */
+
+#define LOG_DEBUG(logger, fmt, ...) \
+    logger_log(logger, LOG_DEBUG, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+
+#define LOG_INFO(logger, fmt, ...) \
+    logger_log(logger, LOG_INFO, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+
+#define LOG_WARN(logger, fmt, ...) \
+    logger_log(logger, LOG_WARN, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+
+#define LOG_ERROR(logger, fmt, ...) \
+    logger_log(logger, LOG_ERROR, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+
+#define LOG_FATAL(logger, fmt, ...) \
+    logger_fatal(logger, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+
+/* ── Utility ────────────────────────────────────────── */
+
+const char *logger_level_name(log_level_t level);
+
+static inline int logger_level_is_valid(log_level_t level) {
+    return level >= LOG_DEBUG && level <= LOG_FATAL;
+}
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* LOGGER_H */
+```
+
+That is about 100 lines. Every single one exists for a reason. Let's walk through the file section by section.
+
+---
+
+## The Documentation Comment
+
+```c
+/**
+ * logger.h — A simple structured logging library.
+ *
+ * Usage:
+ *   #include "logger.h"
+ *
+ *   logger_t *log = logger_create(LOG_DEBUG, stderr);
+ *   LOG_INFO(log, "Server started on port %d", 8080);
+ *   logger_destroy(log);
+ */
+```
+
+This is a **multi-line comment** using the `/** ... */` style. The double star `/**` is a convention (popularized by Doxygen and Javadoc) that marks this as documentation rather than a casual inline comment. The compiler treats `/**` exactly the same as `/*` — the double star is purely for humans and documentation tools.
+
+The comment shows a minimal usage example so that someone opening this header for the first time immediately knows how to use the library without reading the rest. Real-world headers almost always start with something like this.
+
+---
+
+## The Header Guard
+
+```c
+#ifndef LOGGER_H
+#define LOGGER_H
+```
+
+```c
+#endif /* LOGGER_H */
+```
+
+These three lines (the `#ifndef` at the top, the `#define` right after, and the `#endif` at the very bottom of the file) form a **header guard**. They work together:
+
+1. `#ifndef LOGGER_H` — "If the macro `LOGGER_H` has **not** been defined yet, process everything below."
+2. `#define LOGGER_H` — "Define the macro `LOGGER_H` right now." (It does not need a value — its mere existence is what matters.)
+3. `#endif` — marks the end of the conditional block.
+
+The first time any source file includes this header, `LOGGER_H` does not exist yet, so the preprocessor enters the block and processes all the declarations. It also defines `LOGGER_H` in the process. If a second `#include "logger.h"` is encountered (perhaps indirectly through another header), `LOGGER_H` is already defined, so `#ifndef` evaluates to false and the entire body is skipped.
+
+Without this guard, including the header twice would give the compiler duplicate definitions of the same types and macros, causing errors.
+
+The `/* LOGGER_H */` comment after `#endif` is optional — it just reminds the reader which `#ifndef` this `#endif` belongs to, which helps in large files.
+
+---
+
+## The Standard Library Includes
+
+```c
+#include <stdio.h>
+#include <stdarg.h>
+#include <time.h>
+```
+
+Our header uses types and features from these standard library headers, so it must include them. This is an important principle: **a header should include everything it needs to compile on its own**. If someone writes `#include "logger.h"` in their source file, it should work without them having to manually include `stdio.h` first.
+
+Here is why each one is needed:
+
+| Header | What it provides | Why we need it |
+|--------|-----------------|----------------|
+| `<stdio.h>` | `FILE` type, `fprintf`, `stderr` | Our logger writes to `FILE *` streams |
+| `<stdarg.h>` | `va_list`, `va_start`, `va_end` | Our logging functions accept a variable number of arguments (`...`) |
+| `<time.h>` | `time_t`, `struct tm`, `strftime` | Our logger can print timestamps |
+
+Angle brackets `< >` mean "search the system include paths." These are standard library headers shipped with the compiler — you did not write them.
+
+---
+
+## The C++ Compatibility Guard
+
+```c
+#ifdef __cplusplus
+extern "C" {
+#endif
+```
+
+```c
+#ifdef __cplusplus
+}
+#endif
+```
+
+This is a pattern you will see in virtually every professional C header. Let's unpack it:
+
+### The problem
+
+C and C++ compile function names differently. When C compiles a function `add(int, int)`, the symbol in the object file is just `add`. When C++ compiles the same function, it uses **name mangling** — the symbol becomes something like `_Z3addii` (encoding the parameter types). C++ does this to support function overloading (multiple functions with the same name but different parameters).
+
+If a C++ program tries to link against a C library, the C++ compiler looks for the mangled name `_Z3addii`, but the C library only has the plain name `add`. The linker fails with "undefined reference."
+
+### The solution
+
+`extern "C"` tells the C++ compiler: "Do not mangle the names inside this block. Treat them as plain C symbols."
+
+```c
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// everything in here uses C-style (unmangled) symbol names
+
+#ifdef __cplusplus
+}
+#endif
+```
+
+### Why the #ifdef?
+
+`extern "C"` is C++ syntax. If a C compiler encounters it, it will report a syntax error. The `#ifdef __cplusplus` check ensures:
+
+- When compiled as C++: `__cplusplus` is defined, so the `extern "C" {` is included
+- When compiled as C: `__cplusplus` is not defined, so the `extern "C" {` is skipped entirely
+
+The result: the same header works in both C and C++ programs.
+
+---
+
+## The Enum: Log Levels
+
+```c
+typedef enum {
+    LOG_DEBUG   = 0,
+    LOG_INFO    = 1,
+    LOG_WARN    = 2,
+    LOG_ERROR   = 3,
+    LOG_FATAL   = 4
+} log_level_t;
+```
+
+This defines an enumeration — a type whose values are named integer constants. Let's break it down piece by piece:
+
+### `typedef enum { ... } log_level_t;`
+
+In C, if you write just `enum log_level { ... };`, you would have to use the full `enum log_level` everywhere:
+
+```c
+enum log_level level = LOG_DEBUG;   // verbose
+```
+
+The `typedef` creates an alias so you can write:
+
+```c
+log_level_t level = LOG_DEBUG;      // cleaner
+```
+
+The `_t` suffix is a widespread C convention meaning "this is a type." You will see it in standard types too: `size_t`, `time_t`, `uint32_t`.
+
+### Explicit values `= 0, = 1, ...`
+
+Enums in C auto-number starting from 0 by default, so `= 0, = 1, ...` is technically redundant here. But explicitly assigning values is good practice because:
+
+1. It makes the ordering **visually obvious** — you can immediately see that `LOG_ERROR` (3) is more severe than `LOG_WARN` (2)
+2. It prevents accidental breakage if someone rearranges the enum members later
+3. The numeric values can be compared: `if (level >= LOG_WARN)` means "is this a warning or worse?"
+
+### The naming convention
+
+The `LOG_` prefix on every value is the C workaround for not having namespaces. Without it, a name like `DEBUG` or `ERROR` would be extremely likely to collide with macros or enums from other libraries.
+
+---
+
+## The Configuration Macros
+
+```c
+#define LOGGER_MAX_MSG_LEN   1024
+#define LOGGER_DEFAULT_LEVEL LOG_INFO
+#define LOGGER_VERSION_MAJOR 1
+#define LOGGER_VERSION_MINOR 0
+#define LOGGER_VERSION_PATCH 3
+```
+
+These are **preprocessor macros** — before the compiler runs, the preprocessor replaces every occurrence of `LOGGER_MAX_MSG_LEN` with `1024`, and so on. They are not variables; they have no type, no memory address, and no runtime cost. They are pure text substitution.
+
+### Why put them in the header?
+
+Any source file that includes `logger.h` might need these values. The implementation (`logger.c`) needs `LOGGER_MAX_MSG_LEN` to allocate buffers. A user's code might check `LOGGER_VERSION_MAJOR` to ensure they have the right version.
+
+### Why the LOGGER_ prefix?
+
+Same reason as the enum values: avoiding collisions. A bare `MAX_MSG_LEN` could easily clash with another library's macro. The `LOGGER_` prefix acts as a namespace.
+
+### Semantic versioning
+
+The three version macros follow **semantic versioning** (`MAJOR.MINOR.PATCH`). This is a convention, not a language feature — but it lets users write compile-time checks:
+
+```c
+#if LOGGER_VERSION_MAJOR >= 2
+    // use v2 API
+#else
+    // use v1 API
+#endif
+```
+
+---
+
+## The Compiler Hint Macros
+
+```c
+#ifdef __GNUC__
+    #define LOGGER_PRINTF_FMT(fmt_idx, args_idx) \
+        __attribute__((format(printf, fmt_idx, args_idx)))
+    #define LOGGER_NORETURN __attribute__((__noreturn__))
+#else
+    #define LOGGER_PRINTF_FMT(fmt_idx, args_idx)
+    #define LOGGER_NORETURN
+#endif
+```
+
+This section is dense. Let's take it apart:
+
+### The backslash `\`
+
+A `#define` must fit on one line. The backslash `\` at the end of a line is a **line continuation** — it tells the preprocessor "this macro continues on the next line." The `\` must be the very last character on the line (no spaces after it).
+
+### `__attribute__((format(printf, fmt_idx, args_idx)))`
+
+This is a GCC/Clang extension that tells the compiler: "This function uses a `printf`-style format string. The format string is parameter number `fmt_idx`, and the variadic arguments start at parameter number `args_idx`."
+
+Why is this useful? Without it, the compiler cannot check your format strings:
+
+```c
+logger_log(log, LOG_INFO, __FILE__, __LINE__, "%d", "hello");
+//                                              ^^    ^^^^^^^
+// %d expects an int, but you passed a string — this is a bug
+```
+
+With the `format` attribute, the compiler warns you about this mismatch, just like it does for `printf`. The numbers `(5, 6)` mean: "the 5th parameter is the format string, and the variadic arguments start at the 6th parameter."
+
+### The fallback
+
+```c
+#else
+    #define LOGGER_PRINTF_FMT(fmt_idx, args_idx)
+    #define LOGGER_NORETURN
+#endif
+```
+
+If the compiler is not GCC or Clang (e.g., MSVC), these macros expand to **nothing**. The code still compiles; you just lose the extra compile-time checks. This is how C libraries maintain cross-compiler compatibility.
+
+---
+
+## The Function Pointer Type
+
+```c
+typedef void (*log_output_fn)(const char *message, void *user_data);
+```
+
+This line is intimidating at first glance, but it is straightforward once you read it in pieces:
+
+### Reading the syntax
+
+| Part | Meaning |
+|------|---------|
+| `typedef` | "I am creating a type alias" |
+| `void` | "The function returns nothing" |
+| `(*log_output_fn)` | "The alias is called `log_output_fn`, and it is a pointer to a function" |
+| `(const char *message, void *user_data)` | "The function takes a string and a generic pointer" |
+
+After this line, `log_output_fn` is a type. You can declare variables of this type:
+
+```c
+log_output_fn my_writer;   // my_writer is a pointer to a function
+```
+
+### Why does this exist?
+
+This lets users of the library plug in their own custom output function. Instead of always writing to `stderr`, a user could write log messages to a file, a network socket, or a database. They write a function matching this signature:
+
+```c
+void my_custom_writer(const char *message, void *user_data) {
+    // write message to a database, a file, or wherever you want
+}
+```
+
+And pass it to the logger. This pattern — defining a function pointer type in the header — is extremely common in C libraries. It is how C achieves **callbacks**.
+
+### What is `void *user_data`?
+
+`void *` is a **generic pointer** — it can point to any type. The library does not know or care what `user_data` points to. It stores it and passes it back to the callback function. The user decides what it means:
+
+```c
+FILE *logfile = fopen("app.log", "a");
+logger_set_custom_writer(my_logger, my_custom_writer, logfile);
+// now 'logfile' is passed as 'user_data' every time the callback fires
+```
+
+This is a standard C idiom for passing arbitrary context through callbacks without the library needing to know the type.
+
+---
+
+## The Core Struct
+
+```c
+typedef struct {
+    log_level_t  min_level;
+    FILE        *output;
+    int          use_color;
+    int          show_timestamp;
+    log_output_fn custom_writer;
+    void         *writer_data;
+} logger_t;
+```
+
+This is the central data structure. Let's examine each field:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `min_level` | `log_level_t` | Messages below this level are ignored. If set to `LOG_WARN`, debug and info messages are silently discarded |
+| `output` | `FILE *` | The file stream to write to (usually `stderr` or a file opened with `fopen`) |
+| `use_color` | `int` | Whether to use ANSI color codes in output (0 = off, 1 = on). C has no `bool` in C89; `int` is the traditional substitute |
+| `show_timestamp` | `int` | Whether to prefix each message with a timestamp |
+| `custom_writer` | `log_output_fn` | An optional user-provided callback (can be `NULL` if not used) |
+| `writer_data` | `void *` | Arbitrary data passed to the custom writer callback |
+
+### Why typedef struct?
+
+Same reason as the enum: without `typedef`, you would need `struct logger` everywhere. With `typedef`, you can write `logger_t`.
+
+### Column alignment
+
+Notice how the member types and names are aligned into columns. This is a stylistic convention in C for readability — the compiler does not care about alignment. But in headers that are read by many people, readability matters a lot.
+
+---
+
+## Lifecycle Function Declarations
+
+```c
+logger_t *logger_create(log_level_t min_level, FILE *output);
+void      logger_destroy(logger_t *logger);
+```
+
+These declare two functions without providing their bodies (no `{ }`).
+
+### `logger_create`
+
+- Returns `logger_t *` — a pointer to a `logger_t`. This means the function will allocate memory (using `malloc`) and return a pointer to it. This is a common C pattern called a **constructor function** or **factory function**.
+- Takes a minimum log level and a file stream as parameters.
+
+### `logger_destroy`
+
+- Returns `void` — nothing.
+- Takes a `logger_t *` — the logger to clean up. This function will free the allocated memory (using `free`). This is the corresponding **destructor function**.
+
+### The create/destroy pattern
+
+In C, there are no constructors or destructors like C++ has. The convention is to provide explicit `_create` and `_destroy` functions. This pattern is used by virtually every C library:
+
+| Library | Create | Destroy |
+|---------|--------|---------|
+| SDL | `SDL_CreateWindow()` | `SDL_DestroyWindow()` |
+| curl | `curl_easy_init()` | `curl_easy_cleanup()` |
+| SQLite | `sqlite3_open()` | `sqlite3_close()` |
+
+### Whitespace alignment
+
+Notice `void      logger_destroy` — the extra spaces align the function name with `logger_create` above it. Again, purely cosmetic, but it makes a block of related declarations much easier to scan.
+
+---
+
+## Configuration Function Declarations
+
+```c
+void logger_set_level(logger_t *logger, log_level_t level);
+void logger_enable_color(logger_t *logger, int enable);
+void logger_enable_timestamp(logger_t *logger, int enable);
+void logger_set_output(logger_t *logger, FILE *output);
+void logger_set_custom_writer(logger_t *logger, log_output_fn fn, void *data);
+```
+
+These are five function declarations — all following the same pattern:
+
+1. The first parameter is always `logger_t *logger` — the logger instance you are configuring
+2. The remaining parameters are the value(s) to set
+
+In C++ or Java, these would be methods on a class. In C, you pass the "object" explicitly as the first argument. This is how **object-oriented style** looks in C — the struct is the object, and the functions that take a pointer to it are the methods.
+
+---
+
+## The Core Logging Function
+
+```c
+void logger_log(logger_t *logger, log_level_t level,
+                const char *file, int line,
+                const char *fmt, ...) LOGGER_PRINTF_FMT(5, 6);
+```
+
+This is the most complex declaration in the file. Let's break it down:
+
+| Parameter | Type | Purpose |
+|-----------|------|---------|
+| `logger` | `logger_t *` | The logger instance |
+| `level` | `log_level_t` | Severity of this message |
+| `file` | `const char *` | Source filename where the log call happens |
+| `line` | `int` | Line number where the log call happens |
+| `fmt` | `const char *` | A `printf`-style format string |
+| `...` | variadic | Additional arguments matching the format placeholders |
+
+### The `...` (ellipsis)
+
+`...` means this function is **variadic** — it accepts a variable number of additional arguments after `fmt`. Just like `printf`:
+
+```c
+printf("%d", 42);              // 1 extra argument
+printf("%s is %d", "age", 25); // 2 extra arguments
+```
+
+### `LOGGER_PRINTF_FMT(5, 6)`
+
+This expands to `__attribute__((format(printf, 5, 6)))` on GCC/Clang (or to nothing on other compilers). The `5` means "the 5th parameter (`fmt`) is the format string." The `6` means "the variadic arguments start at the 6th position." This enables format-string checking at compile time.
+
+### Why pass `file` and `line`?
+
+So the log output can show **where** the log call was made:
+
+```
+[2024-01-15 10:30:45] [INFO] main.c:42 — Server started on port 8080
+```
+
+But nobody wants to manually type `"main.c", 42` at every call site. That is what the convenience macros solve — they fill in `file` and `line` automatically.
+
+---
+
+## The Fatal Function
+
+```c
+LOGGER_NORETURN
+void logger_fatal(logger_t *logger,
+                  const char *file, int line,
+                  const char *fmt, ...) LOGGER_PRINTF_FMT(4, 5);
+```
+
+This is similar to `logger_log`, but with two differences:
+
+1. **`LOGGER_NORETURN`** — expands to `__attribute__((__noreturn__))` on GCC/Clang. It tells the compiler this function never returns to its caller. After logging the fatal error, the function will call `exit(1)` or `abort()` to terminate the program. This lets the compiler suppress "control reaches end of non-void function" warnings and optimize accordingly.
+
+2. **`LOGGER_PRINTF_FMT(4, 5)`** instead of `(5, 6)` — because `logger_fatal` has one fewer parameter before `fmt` (no `level` parameter — it is always fatal), `fmt` is the 4th parameter and the variadic arguments start at the 5th.
+
+---
+
+## The Convenience Macros
+
+```c
+#define LOG_DEBUG(logger, fmt, ...) \
+    logger_log(logger, LOG_DEBUG, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+
+#define LOG_INFO(logger, fmt, ...) \
+    logger_log(logger, LOG_INFO, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+
+#define LOG_WARN(logger, fmt, ...) \
+    logger_log(logger, LOG_WARN, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+
+#define LOG_ERROR(logger, fmt, ...) \
+    logger_log(logger, LOG_ERROR, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+
+#define LOG_FATAL(logger, fmt, ...) \
+    logger_fatal(logger, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+```
+
+This is where everything comes together. These macros are what the user actually calls.
+
+### `__FILE__` and `__LINE__`
+
+These are **predefined macros** provided by the C preprocessor:
+
+- `__FILE__` expands to the name of the current source file as a string literal (e.g., `"main.c"`)
+- `__LINE__` expands to the current line number as an integer (e.g., `42`)
+
+They are expanded at the point where the macro is used, not where the macro is defined. So when a user writes:
+
+```c
+// main.c, line 42
+LOG_INFO(my_logger, "Server started on port %d", 8080);
+```
+
+The preprocessor expands it to:
+
+```c
+logger_log(my_logger, LOG_INFO, "main.c", 42, "Server started on port %d", 8080);
+```
+
+This is why `__FILE__` and `__LINE__` must be in a macro rather than inside the `logger_log` function itself. If they were inside the function body, they would always expand to `"logger.c"` and whatever line number they are on inside that file — not the caller's file and line.
+
+### `__VA_ARGS__` and `##__VA_ARGS__`
+
+`__VA_ARGS__` is a special identifier that represents "whatever was passed as the `...` arguments" in the macro:
+
+```c
+#define LOG_INFO(logger, fmt, ...) \
+    logger_log(logger, LOG_INFO, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+```
+
+When you call `LOG_INFO(log, "port %d", 8080)`:
+- `logger` → `log`
+- `fmt` → `"port %d"`
+- `...` → `8080`
+- `__VA_ARGS__` → `8080`
+
+### Why `##` before `__VA_ARGS__`?
+
+Consider a log call with no extra arguments:
+
+```c
+LOG_INFO(log, "Server started");
+```
+
+Without `##`, this expands to:
+
+```c
+logger_log(log, LOG_INFO, "main.c", 42, "Server started", );
+//                                                        ^ trailing comma — syntax error!
+```
+
+The `##` is a GCC/Clang extension that says: "If `__VA_ARGS__` is empty, remove the comma before it." So the expansion becomes:
+
+```c
+logger_log(log, LOG_INFO, "main.c", 42, "Server started");
+//                                                       ^ no trailing comma
+```
+
+This is arguably the single most important preprocessor trick for variadic macros to work correctly with zero extra arguments.
+
+---
+
+## The Utility Function
+
+```c
+const char *logger_level_name(log_level_t level);
+```
+
+A simple declaration: given a log level, return its name as a string. The implementation might look like:
+
+```c
+const char *logger_level_name(log_level_t level) {
+    switch (level) {
+        case LOG_DEBUG: return "DEBUG";
+        case LOG_INFO:  return "INFO";
+        case LOG_WARN:  return "WARN";
+        case LOG_ERROR: return "ERROR";
+        case LOG_FATAL: return "FATAL";
+        default:        return "UNKNOWN";
+    }
+}
+```
+
+`const char *` means "a pointer to characters that cannot be modified through this pointer." The string literals like `"DEBUG"` are stored in read-only memory, so returning a `const char *` is the correct type.
+
+---
+
+## The Static Inline Function
+
+```c
+static inline int logger_level_is_valid(log_level_t level) {
+    return level >= LOG_DEBUG && level <= LOG_FATAL;
+}
+```
+
+This is a function **definition** inside a header — which we said you should normally avoid. So why is it here?
+
+### `static`
+
+`static` gives this function **internal linkage** — each source file that includes the header gets its own private copy. This avoids the duplicate-symbol linker error that would occur if the function had external linkage and appeared in multiple object files.
+
+### `inline`
+
+`inline` is a **hint** to the compiler: "This function is small enough that you should consider inserting its body directly at the call site instead of generating a function call." It is only a suggestion — the compiler may ignore it.
+
+### When to use `static inline` in a header
+
+For very small utility functions where the overhead of a function call (pushing arguments onto the stack, jumping to the function, returning) would be wasteful compared to the work the function does. A one-line range check like this is a perfect candidate.
+
+The rule of thumb: if the function body is trivially small (1–3 lines), `static inline` in the header is fine. For anything larger, put only the declaration in the header and the definition in the `.c` file.
+
+---
+
+## The Implementation File
+
+Here is the corresponding `logger.c` file. The header declares the interface; this file provides the implementation:
+
+```c
+/* logger.c — Implementation of the logging library. */
+
+#include "logger.h"
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdarg.h>
+
+/* ── ANSI Color Codes ───────────────────────────────── */
+
+static const char *level_colors[] = {
+    "\033[36m",   /* DEBUG — cyan    */
+    "\033[32m",   /* INFO  — green   */
+    "\033[33m",   /* WARN  — yellow  */
+    "\033[31m",   /* ERROR — red     */
+    "\033[35m",   /* FATAL — magenta */
+};
+
+static const char *color_reset = "\033[0m";
+
+/* ── Lifecycle ──────────────────────────────────────── */
+
+logger_t *logger_create(log_level_t min_level, FILE *output) {
+    logger_t *logger = malloc(sizeof(logger_t));
+    if (!logger) return NULL;
+
+    logger->min_level      = min_level;
+    logger->output         = output;
+    logger->use_color      = 1;
+    logger->show_timestamp = 1;
+    logger->custom_writer  = NULL;
+    logger->writer_data    = NULL;
+
+    return logger;
+}
+
+void logger_destroy(logger_t *logger) {
+    if (logger) {
+        free(logger);
+    }
+}
+
+/* ── Configuration ──────────────────────────────────── */
+
+void logger_set_level(logger_t *logger, log_level_t level) {
+    if (logger) logger->min_level = level;
+}
+
+void logger_enable_color(logger_t *logger, int enable) {
+    if (logger) logger->use_color = enable;
+}
+
+void logger_enable_timestamp(logger_t *logger, int enable) {
+    if (logger) logger->show_timestamp = enable;
+}
+
+void logger_set_output(logger_t *logger, FILE *output) {
+    if (logger) logger->output = output;
+}
+
+void logger_set_custom_writer(logger_t *logger, log_output_fn fn, void *data) {
+    if (logger) {
+        logger->custom_writer = fn;
+        logger->writer_data   = data;
+    }
+}
+
+/* ── Internal Helpers ───────────────────────────────── */
+
+static void write_timestamp(FILE *out) {
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    char buf[20];
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", tm_info);
+    fprintf(out, "[%s] ", buf);
+}
+
+/* ── Core Logging ───────────────────────────────────── */
+
+void logger_log(logger_t *logger, log_level_t level,
+                const char *file, int line,
+                const char *fmt, ...) {
+    if (!logger) return;
+    if (level < logger->min_level) return;
+
+    FILE *out = logger->output ? logger->output : stderr;
+
+    /* Build the user's message */
+    char message[LOGGER_MAX_MSG_LEN];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(message, sizeof(message), fmt, args);
+    va_end(args);
+
+    /* If a custom writer is set, delegate to it */
+    if (logger->custom_writer) {
+        logger->custom_writer(message, logger->writer_data);
+        return;
+    }
+
+    /* Otherwise, write to the FILE stream */
+    if (logger->show_timestamp) {
+        write_timestamp(out);
+    }
+
+    if (logger->use_color) {
+        fprintf(out, "%s[%-5s]%s %s:%d — %s\n",
+                level_colors[level],
+                logger_level_name(level),
+                color_reset,
+                file, line, message);
+    } else {
+        fprintf(out, "[%-5s] %s:%d — %s\n",
+                logger_level_name(level),
+                file, line, message);
+    }
+}
+
+void logger_fatal(logger_t *logger,
+                  const char *file, int line,
+                  const char *fmt, ...) {
+    if (logger) {
+        FILE *out = logger->output ? logger->output : stderr;
+
+        char message[LOGGER_MAX_MSG_LEN];
+        va_list args;
+        va_start(args, fmt);
+        vsnprintf(message, sizeof(message), fmt, args);
+        va_end(args);
+
+        if (logger->show_timestamp) {
+            write_timestamp(out);
+        }
+
+        fprintf(out, "%s[FATAL]%s %s:%d — %s\n",
+                logger->use_color ? level_colors[LOG_FATAL] : "",
+                logger->use_color ? color_reset : "",
+                file, line, message);
+    }
+
+    exit(1);
+}
+
+/* ── Utility ────────────────────────────────────────── */
+
+const char *logger_level_name(log_level_t level) {
+    switch (level) {
+        case LOG_DEBUG: return "DEBUG";
+        case LOG_INFO:  return "INFO";
+        case LOG_WARN:  return "WARN";
+        case LOG_ERROR: return "ERROR";
+        case LOG_FATAL: return "FATAL";
+        default:        return "UNKNOWN";
+    }
+}
+```
+
+Notice several things about the implementation file:
+
+1. **It includes its own header first** — so the compiler verifies the definitions match the declarations.
+2. **`static` helper functions** — `write_timestamp` is `static` because it is an internal helper that no other file needs. It does not appear in the header.
+3. **`static const` arrays** — the color-code arrays are `static` because they are internal to this file.
+4. **`va_start` / `va_end`** — this is how variadic arguments are processed in C. `va_start` initializes the argument list, `vsnprintf` formats the string, and `va_end` cleans up.
+
+---
+
+## Using the Library
+
+```c
+/* main.c */
+#include "logger.h"
+
+int main(void) {
+    logger_t *log = logger_create(LOG_DEBUG, stderr);
+
+    LOG_DEBUG(log, "Initializing subsystems");
+    LOG_INFO(log, "Server started on port %d", 8080);
+    LOG_WARN(log, "Cache miss rate is %.1f%%", 23.5);
+    LOG_ERROR(log, "Failed to connect to %s:%d", "db.internal", 5432);
+
+    /* Change configuration at runtime */
+    logger_set_level(log, LOG_WARN);
+    LOG_DEBUG(log, "This will be silently ignored");
+    LOG_WARN(log, "This will still print");
+
+    logger_destroy(log);
+    return 0;
+}
+```
+
+### Compiling
+
+```bash
+clang logger.c main.c -o app
+./app
+```
+
+Sample output:
+
+```
+[2024-01-15 10:30:45] [DEBUG] main.c:6 — Initializing subsystems
+[2024-01-15 10:30:45] [INFO ] main.c:7 — Server started on port 8080
+[2024-01-15 10:30:45] [WARN ] main.c:8 — Cache miss rate is 23.5%
+[2024-01-15 10:30:45] [ERROR] main.c:9 — Failed to connect to db.internal:5432
+[2024-01-15 10:30:45] [WARN ] main.c:14 — This will still print
+```
+
+---
+
+## What Each Part of the Header Was Responsible For
+
+| Header section | What it provided |
+|---------------|------------------|
+| Documentation comment | Immediate usage example for the reader |
+| Header guard | Prevents duplicate inclusion errors |
+| Standard includes | Types the header depends on (`FILE`, `va_list`, `time_t`) |
+| `extern "C"` guard | Makes the header usable from C++ |
+| Enum | Named constants for log severity levels |
+| `#define` macros | Configuration constants and version numbers |
+| Compiler-hint macros | Format-string checking and `noreturn` attribute, with fallbacks |
+| Function pointer typedef | Callback type for custom output writers |
+| Struct typedef | The core data type holding all logger state |
+| Function declarations | The public API — lifecycle, configuration, and logging |
+| Convenience macros | User-facing API that auto-fills `__FILE__` and `__LINE__` |
+| `static inline` function | A tiny utility inlined at every call site |

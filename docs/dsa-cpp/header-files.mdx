@@ -1,0 +1,400 @@
+---
+title: Header Files
+description: What header files are, declarations vs definitions, how #include works, header guards, and the compiler-linker relationship
+---
+
+## What is a Header File?
+
+A header file is a file — typically with a `.h` extension in C (or `.h`/`.hpp` in C++) — whose primary job is to hold **declarations**. A declaration tells the compiler that something exists and describes its type or signature, without necessarily providing the implementation.
+
+Think of a header as a **menu at a restaurant**. It tells you what dishes are available, what ingredients they use, and what you can order — but it does not show you the recipe or the kitchen. The recipe (implementation) lives somewhere else.
+
+---
+
+## Declaration vs Definition
+
+These two terms have precise, distinct meanings:
+
+### Declaration
+
+A declaration says: "this thing exists, and here is what it looks like."
+
+```c
+int add(int a, int b);         // function declaration
+extern int count;               // variable declaration
+struct Point;                   // forward declaration of a struct
+```
+
+A declaration tells the compiler the name, return type, and parameter types. It does **not** provide the body. Notice how function declarations end with a semicolon — there is no `{ }` block.
+
+### Definition
+
+A definition provides the actual implementation or storage:
+
+```c
+int add(int a, int b) {        // function definition
+    return a + b;
+}
+
+int count = 0;                  // variable definition (allocates storage)
+
+struct Point {                  // struct definition
+    int x;
+    int y;
+};
+```
+
+Every definition is also a declaration, but not every declaration is a definition. The key insight: **you can declare something many times, but you can only define it once** (this is the One Definition Rule).
+
+---
+
+## What Belongs in a Header
+
+A header can contain:
+
+- Function declarations: `int add(int a, int b);`
+- Struct/union/enum definitions (type definitions need to be shared)
+- Typedefs and type aliases
+- Macro definitions (`#define`)
+- Constant definitions
+- `extern` variable declarations
+
+A header normally should **not** contain ordinary function implementations. If two source files both include a header that contains a function definition, the linker sees two copies of that definition and produces a duplicate-symbol error.
+
+```c
+// math_utils.h — GOOD: declaration only
+int add(int a, int b);
+
+// math_utils.h — BAD: includes definition
+int add(int a, int b) {
+    return a + b;    // every file that #includes this gets its own copy
+}
+```
+
+The implementation belongs in a `.c` or `.cpp` source file.
+
+---
+
+## How #include Actually Works
+
+`#include` is handled by the **preprocessor**, which runs *before* the actual compilation stage. It is not a special "link this file" instruction. It is a **textual copy-paste operation**.
+
+When the preprocessor encounters:
+
+```c
+#include "math_utils.h"
+```
+
+it literally replaces that line with the entire contents of `math_utils.h`. The result is as if you had typed the header's contents directly into your source file at that location.
+
+### A concrete example
+
+Suppose you have these files:
+
+```c
+// math_utils.h
+int add(int a, int b);
+int multiply(int a, int b);
+```
+
+```c
+// main.c
+#include "math_utils.h"
+
+int main() {
+    int result = add(3, 4);
+    return 0;
+}
+```
+
+After preprocessing, `main.c` effectively becomes:
+
+```c
+int add(int a, int b);
+int multiply(int a, int b);
+
+int main() {
+    int result = add(3, 4);
+    return 0;
+}
+```
+
+The `#include` line is gone. The compiler never sees it — it only sees the expanded source.
+
+### Critical consequence
+
+You do **not** pass `.h` files to the compiler. The header contents are already inside the source file after preprocessing:
+
+```bash
+# Correct — just compile the source files
+clang main.c math_utils.c -o program
+
+# Wrong — the compiler doesn't need the header separately
+clang main.c math_utils.c math_utils.h -o program
+```
+
+---
+
+## The Purpose of a Header: Giving the Compiler Information
+
+When the compiler processes `main.c` and encounters a call to `add(3, 4)`, it needs to know:
+
+- Does `add` exist?
+- What types does it accept?
+- What type does it return?
+
+The header provides exactly this information through the declaration `int add(int a, int b);`. The compiler can now verify that the call is correct — it passes two `int`s and the return value is an `int`.
+
+But the compiler does **not** have the actual machine code for `add` at this point. That comes later.
+
+---
+
+## Where the Implementation Lives
+
+The implementation goes in a source file:
+
+```c
+// math_utils.c
+#include "math_utils.h"
+
+int add(int a, int b) {
+    return a + b;
+}
+
+int multiply(int a, int b) {
+    return a * b;
+}
+```
+
+Notice that `math_utils.c` also includes its own header. This is deliberate — it lets the compiler verify that the definitions match the declarations. If the header declares `int add(int, int)` but the source file defines `double add(int, int)`, the compiler catches the mismatch.
+
+---
+
+## The Compiler and Linker: Two Separate Stages
+
+Understanding the build pipeline is essential to understanding why headers work the way they do.
+
+### Stage 1: Compilation
+
+Each source file is compiled independently into an **object file** (`.o` or `.obj`):
+
+```bash
+clang -c main.c          # produces main.o
+clang -c math_utils.c    # produces math_utils.o
+```
+
+When compiling `main.c`, the compiler sees the declaration of `add()` (from the included header) and the call to `add(3, 4)`. It trusts the declaration, generates machine code for `main`, and leaves a placeholder saying "I need the actual `add` function — someone else will provide it."
+
+When compiling `math_utils.c`, the compiler generates the actual machine code for `add()` and `multiply()`.
+
+### Stage 2: Linking
+
+The linker combines object files and resolves all the placeholders:
+
+```bash
+clang main.o math_utils.o -o program
+```
+
+It sees that `main.o` needs `add` and that `math_utils.o` provides `add`. It connects them. The result is a complete executable.
+
+### What happens if you forget to link
+
+If you compile `main.c` alone:
+
+```bash
+clang main.c -o program
+```
+
+The compiler is happy — it saw the declaration of `add()` from the header. But the linker fails:
+
+```
+undefined reference to 'add'
+```
+
+The declaration told the compiler *what* `add` looks like. Nobody told the linker *where* `add` is implemented. The header does not contain the implementation, and no object file providing `add` was linked.
+
+### The mental model
+
+```
+main.c ──[#include]──> sees declarations ──[compile]──> main.o (needs add)
+                                                              \
+                                                               ──> linker ──> executable
+                                                              /
+math_utils.c ──[compile]──> math_utils.o (provides add)
+```
+
+**Header = information for the compiler. Source file = implementation for the linker.**
+
+---
+
+## Standard Library Headers
+
+Standard headers like `stdio.h` and `stdlib.h` work exactly the same way:
+
+```c
+#include <stdio.h>
+
+int main() {
+    printf("Hello\n");
+    return 0;
+}
+```
+
+`<stdio.h>` provides the declaration of `printf`. The implementation of `printf` is in the **C standard library** (typically `libc`), which is a pre-compiled library that the linker automatically links against. You did not write `printf` — the operating system or compiler toolchain ships it.
+
+The angle brackets `< >` versus quotes `" "` control where the preprocessor searches for the header:
+
+- `#include <stdio.h>` — searches system/standard include paths
+- `#include "my_header.h"` — searches the current directory first, then falls back to system paths
+
+Both produce the same textual-inclusion result.
+
+---
+
+## Header Guards
+
+### The problem
+
+Consider this scenario:
+
+```c
+// shapes.h
+#include "point.h"
+// declares shape functions using Point
+
+// graphics.h
+#include "point.h"
+// declares graphics functions using Point
+
+// main.c
+#include "shapes.h"
+#include "graphics.h"
+```
+
+After preprocessing, `main.c` ends up with the contents of `point.h` **twice** — once from `shapes.h` and once from `graphics.h`. If `point.h` defines a struct, the compiler sees two definitions of the same struct and reports an error.
+
+### The solution: header guards
+
+```c
+// point.h
+#ifndef POINT_H
+#define POINT_H
+
+struct Point {
+    int x;
+    int y;
+};
+
+#endif
+```
+
+Here is what each directive does:
+
+- `#ifndef POINT_H` — "if the macro `POINT_H` has **not** been defined, proceed"
+- `#define POINT_H` — "define the macro `POINT_H`" (it doesn't need a value — its mere existence is what matters)
+- `#endif` — "end of the conditional block"
+
+The first time the preprocessor encounters `#include "point.h"`, `POINT_H` is not defined, so the preprocessor enters the block, defines `POINT_H`, and processes the struct definition. The second time, `POINT_H` is already defined, so `#ifndef POINT_H` evaluates to false and the entire body is skipped.
+
+The result: the struct definition appears exactly once in the preprocessed output, no matter how many times the header is included.
+
+### Naming convention
+
+The guard macro name is conventionally derived from the filename:
+
+| Header filename | Guard macro |
+|----------------|-------------|
+| `math.h` | `MATH_H` |
+| `my_utils.h` | `MY_UTILS_H` |
+| `vector.h` | `VECTOR_H` |
+
+### The modern alternative: #pragma once
+
+```c
+// point.h
+#pragma once
+
+struct Point {
+    int x;
+    int y;
+};
+```
+
+`#pragma once` tells the preprocessor to include this file at most once per compilation unit. It is shorter and avoids the risk of accidentally reusing a guard macro name. While not part of the official C standard, it is supported by all major compilers (GCC, Clang, MSVC).
+
+---
+
+## Function Declarations: Details
+
+### Parameter names are optional
+
+In a declaration, parameter names exist only for readability:
+
+```c
+int add(int a, int b);    // with names — clearer to read
+int add(int, int);         // without names — equally valid
+```
+
+Both tell the compiler the same thing: `add` takes two `int`s and returns an `int`.
+
+### void parameters in C
+
+```c
+void foo(void);    // takes NO arguments
+void foo();        // in C, this means "takes an UNSPECIFIED number of arguments"
+```
+
+In C (not C++), an empty parameter list `()` does **not** mean "no arguments." It means the function accepts an unspecified number of arguments. To explicitly say "no arguments," you must write `(void)`. This is a common source of confusion for programmers coming from C++, where `()` and `(void)` are equivalent.
+
+### Variadic functions
+
+The `...` (ellipsis) in a declaration indicates a **variadic function** — one that accepts a variable number of arguments:
+
+```c
+int printf(const char *format, ...);
+void log(const char *format, ...);
+```
+
+The `...` means: "after the first argument(s), any number of additional arguments can follow." This is how `printf` can accept `printf("%d", x)`, `printf("%d %d", x, y)`, or any other combination.
+
+---
+
+## Sharing a Header Across Multiple Source Files
+
+One of the most important roles of a header is to serve as a **single source of truth** for an interface. Without headers, you would need to manually duplicate declarations in every source file that uses them:
+
+```c
+// file_a.c — manually declaring add
+int add(int a, int b);
+// uses add...
+
+// file_b.c — manually declaring add AGAIN
+int add(int a, int b);
+// uses add...
+```
+
+If the signature of `add` ever changes, you must update every file. With a header, all files share one authoritative declaration:
+
+```c
+// file_a.c
+#include "math_utils.h"
+// uses add...
+
+// file_b.c
+#include "math_utils.h"
+// uses add...
+```
+
+Change the declaration once in `math_utils.h`, and every file that includes it picks up the change.
+
+---
+
+## Build Systems
+
+In real projects, you do not manually type out every source file in the compiler command. Build systems automate this:
+
+- **Make** uses a `Makefile` to specify which source files to compile and link
+- **CMake** generates build configurations from a `CMakeLists.txt` file
+- **Ninja**, **Meson**, **Bazel** are other build systems
+
+But this automation comes from the build system, not from `#include`. The preprocessor's `#include` never instructs the compiler to find and compile an associated implementation file. If `main.c` includes `math_utils.h`, the compiler does **not** automatically search for `math_utils.c` and compile it. You must tell the build system (or the compiler command) about every source file.

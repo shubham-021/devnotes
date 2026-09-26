@@ -1,0 +1,320 @@
+---
+title: Headers in Practice
+description: Macros and compiler attributes in headers, the namespace problem in C, naming collisions, static linkage, and how C++ differs
+---
+
+## Macros in Headers
+
+A header is a natural place to define macros because every source file that includes the header automatically gets access to them:
+
+```c
+// config.h
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#define MAX_BUFFER_SIZE 1024
+#define PI 3.14159265358979
+
+#endif
+```
+
+Any source file that does `#include "config.h"` can now use `MAX_BUFFER_SIZE` and `PI`. Since `#define` is processed by the preprocessor, the macro names are replaced with their values before the compiler even sees the code.
+
+---
+
+## Conditional Compilation and Compiler Attributes
+
+Headers frequently use **conditional compilation** to adapt to different compilers, platforms, or build configurations:
+
+```c
+// compat.h
+#ifndef COMPAT_H
+#define COMPAT_H
+
+#ifdef __GNUC__
+    #define NORETURN __attribute__((__noreturn__))
+#else
+    #define NORETURN
+#endif
+
+#endif
+```
+
+Let's break down what each part means:
+
+### `__GNUC__`
+
+`__GNUC__` is a **predefined macro** — the compiler defines it automatically, you do not define it yourself. It is defined by GCC (the GNU C Compiler) and also by Clang (for compatibility). If you are compiling with GCC or Clang, `__GNUC__` exists and `#ifdef __GNUC__` evaluates to true.
+
+### `__attribute__((__noreturn__))`
+
+This is a GCC/Clang extension that tells the compiler: "this function never returns to its caller." Functions like `exit()` or `abort()` never return — they terminate the program. Telling the compiler this allows it to:
+
+- Suppress warnings about missing return statements after the call
+- Optimize code paths (it knows execution never continues past this point)
+
+```c
+NORETURN void fatal_error(const char *message);
+```
+
+### The fallback
+
+If the compiler does not define `__GNUC__` (e.g., you are using MSVC), the `#else` branch defines `NORETURN` as nothing — an empty macro. The declaration becomes simply:
+
+```c
+void fatal_error(const char *message);
+```
+
+The code still compiles correctly; you just lose the optimization hint. This pattern lets a single header work across multiple compilers.
+
+---
+
+## The Namespace Problem in C
+
+C does **not** have namespaces. It does not have a scope-resolution operator like C++'s `::`. Every function declared at file scope with external linkage exists in one single global namespace.
+
+### Why this matters
+
+Imagine you are using two third-party libraries. Each provides its own header:
+
+```c
+// graphics.h
+void init(void);
+void draw(int x, int y);
+```
+
+```c
+// audio.h
+void init(void);
+void play(int track);
+```
+
+Both declare a function called `init`. Now your source file includes both:
+
+```c
+#include "graphics.h"
+#include "audio.h"
+
+int main() {
+    init();   // Which init? The compiler sees two declarations
+    return 0;
+}
+```
+
+Several things can go wrong:
+
+1. **If the declarations are identical** (`void init(void)` in both), the compiler might not complain at the declaration stage. But at link time, if both libraries define `init`, the linker sees two definitions of the same symbol and produces a **duplicate-symbol error**.
+
+2. **If the declarations have different types** (e.g., one returns `void` and the other returns `int`), the compiler itself may report **conflicting declarations**.
+
+3. **C does not support function overloading.** In C++, two functions can share a name as long as their parameter types differ. In C, this is not allowed — two ordinary functions cannot have the same name regardless of their parameters.
+
+### The prefix convention
+
+Since C has no namespaces, libraries conventionally avoid collisions by adding a **distinctive prefix** to all their public function names:
+
+```c
+// graphics.h
+void gfx_init(void);
+void gfx_draw(int x, int y);
+
+// audio.h
+void audio_init(void);
+void audio_play(int track);
+```
+
+Now there is no ambiguity. This is the standard approach in real-world C libraries:
+
+| Library | Prefix | Example |
+|---------|--------|---------|
+| SDL | `SDL_` | `SDL_Init()`, `SDL_CreateWindow()` |
+| OpenGL | `gl` | `glBegin()`, `glVertex3f()` |
+| GTK | `gtk_` | `gtk_init()`, `gtk_window_new()` |
+| curl | `curl_` | `curl_easy_init()`, `curl_easy_perform()` |
+| SQLite | `sqlite3_` | `sqlite3_open()`, `sqlite3_exec()` |
+
+This is a naming convention, not a language feature. C has no mechanism to enforce it.
+
+---
+
+## Static Functions: File-Scoped Visibility
+
+The `static` keyword on a function gives it **internal linkage**, meaning it is visible only within the source file where it is defined:
+
+```c
+// file_a.c
+static void helper(void) {
+    // only visible inside file_a.c
+}
+
+void public_function_a(void) {
+    helper();   // works — same file
+}
+```
+
+```c
+// file_b.c
+static void helper(void) {
+    // a completely different function, also called helper
+    // only visible inside file_b.c
+}
+
+void public_function_b(void) {
+    helper();   // calls file_b's helper, not file_a's
+}
+```
+
+Both files define a function called `helper`. Normally this would cause a duplicate-symbol linker error. But because both are `static`, each has internal linkage — the linker does not export them, so they do not collide.
+
+This is as close as C gets to "private" functions. A `static` function is essentially private to its source file.
+
+### static vs non-static
+
+| Linkage | Keyword | Visibility | Linker behavior |
+|---------|---------|-----------|-----------------|
+| External (default) | none | All source files | Exported; must be unique across all linked files |
+| Internal | `static` | Only its source file | Not exported; invisible to other files |
+
+---
+
+## Namespace-Like Patterns in C
+
+While C lacks true namespaces, programmers sometimes emulate namespace-like organization using **structs and function pointers**:
+
+```c
+// math_ns.h
+typedef struct {
+    int (*add)(int, int);
+    int (*multiply)(int, int);
+} MathNamespace;
+
+extern const MathNamespace Math;
+```
+
+```c
+// math_ns.c
+#include "math_ns.h"
+
+static int add_impl(int a, int b) { return a + b; }
+static int mul_impl(int a, int b) { return a * b; }
+
+const MathNamespace Math = {
+    .add = add_impl,
+    .multiply = mul_impl,
+};
+```
+
+```c
+// main.c
+#include "math_ns.h"
+
+int main() {
+    int result = Math.add(3, 4);       // looks like a namespace!
+    int product = Math.multiply(5, 6);
+    return 0;
+}
+```
+
+The actual function implementations (`add_impl`, `mul_impl`) are `static` — hidden inside `math_ns.c`. The only public symbol is the `Math` struct. This achieves:
+
+- A namespace-like `Math.add()` calling syntax
+- Encapsulation of internal implementations
+- No risk of name collisions with other libraries
+
+But this is a convention and design pattern, not a language feature. It adds a layer of indirection (function pointers), which can have minor performance implications and makes debugging slightly harder.
+
+---
+
+## What About C++ Headers?
+
+C++ shares the same fundamental `#include` mechanism as C. The preprocessor still performs textual inclusion, headers still provide declarations, and the linker still resolves references between object files.
+
+However, C++ adds several mechanisms that C lacks:
+
+### Namespaces
+
+```cpp
+// graphics.h
+namespace gfx {
+    void init();
+    void draw(int x, int y);
+}
+
+// audio.h
+namespace audio {
+    void init();
+    void play(int track);
+}
+```
+
+Now both `init` functions coexist without collision: `gfx::init()` and `audio::init()` are distinct symbols.
+
+### Function overloading
+
+```cpp
+void print(int x);
+void print(double x);
+void print(const char* s);
+```
+
+In C++, these are three different functions that can coexist because the compiler uses **name mangling** — it encodes the parameter types into the symbol name. The linker sees symbols like `_Z5printi`, `_Z5printd`, and `_Z5printPKc` instead of just `print`.
+
+### No automatic compilation of associated files
+
+Even in C++, `#include` does **not** instruct the compiler to find and compile an associated `.cpp` file. If `main.cpp` includes `math.h`, the compiler does not automatically search for `math.cpp`:
+
+```bash
+# You still need to tell the compiler about every source file
+clang++ main.cpp math.cpp -o program
+```
+
+### Modules (C++20)
+
+Modern C++ (C++20 and later) introduced **modules** as an alternative to headers. Modules are compiled once, do not rely on textual inclusion, and avoid many issues that headers have (like include order dependencies and macro leakage). However, header files remain dominant in existing codebases.
+
+---
+
+## Summary: The Complete Picture
+
+The relationship between headers, source files, the compiler, and the linker:
+
+```
+┌─────────────────────────────────────────────────┐
+│                  PREPROCESSOR                    │
+│                                                  │
+│  main.c  ──#include──>  math.h contents          │
+│           pasted into main.c                     │
+└──────────────────────┬──────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────┐
+│                   COMPILER                       │
+│                                                  │
+│  Expanded main.c  ──>  main.o                    │
+│  (knows declarations,  (has placeholders for     │
+│   verifies calls)       unresolved symbols)      │
+│                                                  │
+│  math.c  ──>  math.o                             │
+│  (has actual function   (has compiled machine     │
+│   definitions)           code for functions)      │
+└──────────────────────┬──────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────┐
+│                    LINKER                         │
+│                                                  │
+│  main.o  +  math.o  ──>  executable              │
+│  (connects placeholders to actual code)          │
+└─────────────────────────────────────────────────┘
+```
+
+| Concept | Role |
+|---------|------|
+| Header (`.h`) | Declarations and interface — gives the compiler information |
+| Source file (`.c`/`.cpp`) | Definitions and implementation — gives the linker code |
+| `#include` | Textual copy-paste by the preprocessor |
+| Header guard | Prevents duplicate inclusion within one compilation unit |
+| Compiler | Translates each source file into an object file independently |
+| Linker | Combines object files and resolves cross-file references |
+| `static` function | Internal linkage — visible only within its source file |
+| Prefix convention | C's workaround for the lack of namespaces |
